@@ -7,7 +7,16 @@ from pptx.dml.color import RGBColor
 import json, io, os, uuid, requests
 
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*"}})
+
+# ✅ FIXED CORS (IMPORTANT)
+CORS(app, supports_credentials=True)
+
+@app.after_request
+def add_cors_headers(response):
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type,Authorization"
+    response.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
+    return response
 
 # CONFIG
 API_KEY = os.environ.get("GROQ_API_KEY")
@@ -31,7 +40,7 @@ def add_text(slide, text, size, x, y):
 def add_image(slide, query, x, y, w, h):
     try:
         url = f"https://source.unsplash.com/800x600/?{query}"
-        img_data = requests.get(url, timeout=5).content   # ✅ timeout added
+        img_data = requests.get(url, timeout=5).content
         img_path = "temp.jpg"
 
         with open(img_path, "wb") as f:
@@ -73,37 +82,24 @@ def build_pptx(slides):
 def generate_slide_content(prompt, n):
     client = Groq(api_key=API_KEY)
 
-    system_prompt = f"""
-Create {n} slides EXACTLY like a professional course PPT.
-
-Return ONLY valid JSON array like:
-[
-  {{
-    "title": "...",
-    "explanation": "...",
-    "bullets": ["...", "..."]
-  }}
-]
-"""
-
     res = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[
-            {"role":"system","content":system_prompt},
+            {"role":"system","content":"Return ONLY JSON array"},
             {"role":"user","content":prompt}
         ]
     )
 
     raw = res.choices[0].message.content.strip()
 
-    # ✅ FIX: clean markdown safely
     if raw.startswith("```"):
         raw = raw.split("```")[1]
 
     try:
         return json.loads(raw)
     except:
-        raise Exception("AI returned invalid JSON")
+        print("AI RAW:", raw)  # 🔥 debug
+        raise Exception("Invalid AI JSON")
 
 # ---------------- AI WEBSITE ---------------- #
 
@@ -113,7 +109,7 @@ def generate_website_code(prompt):
     res = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[
-            {"role":"system","content":"Return ONLY HTML code"},
+            {"role":"system","content":"Return ONLY HTML"},
             {"role":"user","content":prompt}
         ]
     )
@@ -132,25 +128,24 @@ def generate_website_code(prompt):
 
 @app.route("/")
 def home():
-    return jsonify({"message":"PPTFinder API running 🚀"})
+    return jsonify({"message":"API running"})
 
 @app.route("/health")
 def health():
     return jsonify({"status":"ok"})
 
-# ✅ FIXED (IMPORTANT)
-@app.route("/generate", methods=["POST"])
+# ✅ PPT ROUTE WITH OPTIONS FIX
+@app.route("/generate", methods=["POST", "OPTIONS"])
 def generate_ppt():
+    if request.method == "OPTIONS":
+        return jsonify({"ok": True})
+
     try:
         data = request.get_json(silent=True)
-
         if not data:
-            return jsonify({"error": "Invalid JSON"}), 400
+            return jsonify({"error":"Invalid JSON"}), 400
 
-        prompt = data.get("prompt")
-        num_slides = int(data.get("num_slides", 5))
-
-        slides = generate_slide_content(prompt, num_slides)
+        slides = generate_slide_content(data["prompt"], data["num_slides"])
         ppt = build_pptx(slides)
 
         return send_file(
@@ -163,15 +158,18 @@ def generate_ppt():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route("/generate-website", methods=["POST"])
+# ✅ WEBSITE ROUTE WITH OPTIONS FIX
+@app.route("/generate-website", methods=["POST", "OPTIONS"])
 def generate_website():
+    if request.method == "OPTIONS":
+        return jsonify({"ok": True})
+
     try:
         data = request.get_json(silent=True)
-
         if not data:
-            return jsonify({"error": "Invalid JSON"}), 400
+            return jsonify({"error":"Invalid JSON"}), 400
 
-        html = generate_website_code(data.get("prompt"))
+        html = generate_website_code(data["prompt"])
 
         name = f"site_{uuid.uuid4().hex[:6]}.html"
         path = os.path.join(SITES_FOLDER, name)
@@ -180,7 +178,6 @@ def generate_website():
             f.write(html)
 
         return jsonify({
-            "success": True,
             "preview_url": f"/preview/{name}",
             "download_url": f"/download-site/{name}"
         })

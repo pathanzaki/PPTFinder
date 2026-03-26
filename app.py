@@ -61,41 +61,59 @@ def build_pptx(slides_data):
 def generate_slide_content(prompt, n):
     client = Groq(api_key=API_KEY)
 
-    system = f"""
-    You are a professional presentation designer.
+   system_prompt = f"""
+You are a professional presentation generator.
 
-    Create {n} slides:
-    - Title (short)
-    - Explanation (3-4 lines)
-    - 5 bullet points
+Create EXACTLY {num_slides} slides in this STRICT format:
 
-    Make it professional, structured, non-repetitive.
+Each slide must follow one of these patterns:
 
-    Return ONLY JSON array.
-    """
+1. TITLE SLIDE
+- Big title
+- Description paragraph
 
-    res = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        messages=[
-            {"role":"system","content":system},
-            {"role":"user","content":prompt}
-        ]
-    )
+2. CONTENT SLIDE TYPE A
+- Title
+- Explanation paragraph
+- 8 bullet points with numbering:
+  1
+  2
+  3
+  4
+  5
+  6
+  7
+  8
 
-    data = res.choices[0].message.content.strip()
+3. CONTENT SLIDE TYPE B (KEY POINTS)
+- Title
+- Explanation
+- Section header: KEY POINTS
+- 7–8 short bullet points
 
-    if "```" in data:
-        data = data.split("```")[1]
+4. CONTENT SLIDE TYPE C (NUMBERED STYLE)
+- Title
+- Explanation
+- Points like:
+  01
+  02
+  03
+  04
+  05
+  06
 
-    try:
-        return json.loads(data)
-    except:
-        return [{
-            "title":"Error",
-            "explanation":"AI failed",
-            "bullets":["Try again"]
-        }]
+5. FINAL SLIDE (CONCLUSION)
+- Summary paragraph
+- 5 highlight points with ✦ symbol
 
+IMPORTANT RULES:
+- Use same structure like professional PPT
+- Each slide must look different (variety)
+- No repetition
+- Clean and structured
+
+Return ONLY JSON array.
+"""
 # ─── AI WEBSITE ─────────────────────
 def generate_website_code(prompt):
     client = Groq(api_key=API_KEY)

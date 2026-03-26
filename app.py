@@ -2,15 +2,15 @@ from flask import Flask, request, send_file, jsonify, send_from_directory
 from flask_cors import CORS
 from groq import Groq
 from pptx import Presentation
+from pptx.util import Inches, Pt
+from pptx.dml.color import RGBColor
+from pptx.enum.text import PP_ALIGN
 import json, io, os, uuid
 
-# ─────────────────────────────────────────
-# APP SETUP
-# ─────────────────────────────────────────
 app = Flask(__name__)
 
-# ✅ CORS (FIXED PROPERLY)
-CORS(app, supports_credentials=True)
+# ✅ CORS FIX (IMPORTANT)
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 @app.after_request
 def after_request(response):
@@ -19,170 +19,189 @@ def after_request(response):
     response.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
     return response
 
-# ─────────────────────────────────────────
-# CONFIG
-# ─────────────────────────────────────────
-API_KEY = os.environ.get("GROQ_API_KEY")
-SITES_FOLDER = "generated_sites"
+# ─── CONFIG ─────────────────────────
+API_KEY = os.environ.get("GROQ_API_KEY")   # ✅ FIXED
+SITES_FOLDER = os.path.join(os.path.dirname(__file__), "generated_sites")
 os.makedirs(SITES_FOLDER, exist_ok=True)
 
-# ─────────────────────────────────────────
-# PPT GENERATION
-# ─────────────────────────────────────────
-def build_ppt(slides_data):
+# ─── COLORS ─────────────────────────
+C_BG_DARK   = RGBColor(10,10,24)
+C_BG_LIGHT  = RGBColor(240,242,255)
+C_ACCENT1   = RGBColor(124,58,255)
+C_ACCENT2   = RGBColor(0,212,255)
+C_WHITE     = RGBColor(255,255,255)
+C_TEXT_DARK = RGBColor(18,18,42)
+
+# ─── PPT HELPERS ────────────────────
+def add_text(slide, text, size=28, x=1, y=1):
+    box = slide.shapes.add_textbox(Inches(x), Inches(y), Inches(10), Inches(2))
+    p = box.text_frame.paragraphs[0]
+    run = p.add_run()
+    run.text = text
+    run.font.size = Pt(size)
+    run.font.color.rgb = C_WHITE
+
+def build_pptx(slides_data):
     prs = Presentation()
 
-    for slide_data in slides_data:
-        slide = prs.slides.add_slide(prs.slide_layouts[1])
-        slide.shapes.title.text = slide_data["title"]
+    for i, s in enumerate(slides_data):
+        slide = prs.slides.add_slide(prs.slide_layouts[6])
 
-        content = slide.placeholders[1]
-        text = slide_data["explanation"] + "\n\n"
+        # background
+        bg = slide.background.fill
+        bg.solid()
+        bg.fore_color.rgb = C_BG_DARK if i % 2 == 0 else C_BG_LIGHT
 
-        for b in slide_data["bullets"]:
-            text += f"• {b}\n"
+        # title
+        add_text(slide, s["title"], 36, 0.8, 0.8)
 
-        content.text = text
+        # explanation
+        add_text(slide, s.get("explanation",""), 18, 0.8, 2)
+
+        # bullets
+        y = 4
+        for b in s.get("bullets", [])[:5]:
+            add_text(slide, f"• {b}", 16, 1, y)
+            y += 0.6
 
     buf = io.BytesIO()
     prs.save(buf)
     buf.seek(0)
-    return buf
+    return buf.read()
 
-def generate_slides(prompt, num):
-    try:
-        client = Groq(api_key=API_KEY)
-
-        res = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[
-                {"role": "system", "content": "Return JSON slides"},
-                {"role": "user", "content": prompt}
-            ]
-        )
-
-        data = res.choices[0].message.content.strip()
-
-        if "```" in data:
-            data = data.split("```")[1]
-
-        return json.loads(data)
-
-    except Exception as e:
-        print("GROQ ERROR:", str(e))
-        return [{
-            "title": "Error",
-            "explanation": "AI failed",
-            "bullets": ["Try again"]
-        }]
-
-# ─────────────────────────────────────────
-# WEBSITE GENERATION
-# ─────────────────────────────────────────
-def generate_website_code(prompt):
+# ─── AI SLIDES ──────────────────────
+def generate_slide_content(prompt, n):
     client = Groq(api_key=API_KEY)
 
-    response = client.chat.completions.create(
+    system = f"""
+    You are expert presentation designer.
+
+    Create {n} slides.
+
+    Each slide must include:
+    - title (short)
+    - explanation (detailed)
+    - bullets (5 points)
+
+    Make it PROFESSIONAL, not generic.
+
+    Return ONLY JSON.
+    """
+
+    res = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[
-            {"role": "system", "content": "Return ONLY full HTML page."},
-            {"role": "user", "content": prompt}
+            {"role":"system","content":system},
+            {"role":"user","content":prompt}
         ]
     )
 
-    html = response.choices[0].message.content.strip()
+    data = res.choices[0].message.content.strip()
 
-    if "```" in html:
-        html = html.split("```")[1]
+    if "```" in data:
+        data = data.split("```")[1]
+
+    try:
+        return json.loads(data)
+    except:
+        return [{
+            "title":"Error",
+            "explanation":"AI failed",
+            "bullets":["Try again"]
+        }]
+
+# ─── WEBSITE ────────────────────────
+def generate_website_code(prompt):
+    client = Groq(api_key=API_KEY)
+
+    system = """
+    Create HIGH-END modern website.
+
+    Include:
+    - navbar
+    - hero
+    - features
+    - animations
+    - responsive design
+
+    Return ONLY HTML.
+    """
+
+    res = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[
+            {"role":"system","content":system},
+            {"role":"user","content":prompt}
+        ]
+    )
+
+    html = res.choices[0].message.content.strip()
 
     if not html.lower().startswith("<!doctype"):
         html = "<!DOCTYPE html>\n" + html
 
     return html
 
-# ─────────────────────────────────────────
-# ROUTES
-# ─────────────────────────────────────────
-
+# ─── ROUTES ─────────────────────────
 @app.route("/")
 def home():
-    return jsonify({"message": "PPTFinder API is running 🚀"})
+    return jsonify({"message":"PPTFinder API running 🚀"})
 
 @app.route("/health")
 def health():
-    return jsonify({"status": "ok"})
+    return jsonify({"status":"ok"})
 
-# ✅ HANDLE PREFLIGHT REQUESTS (CORS FIX)
+# ✅ PREFLIGHT FIX
 @app.route('/generate', methods=['OPTIONS'])
 @app.route('/generate-website', methods=['OPTIONS'])
-def handle_options():
+def opt():
     return '', 200
 
 @app.route("/generate", methods=["POST"])
-def generate_ppt():
+def generate():
     try:
         data = request.get_json(force=True)
-
-        prompt = data.get("prompt", "")
-        num = int(data.get("num_slides", 10))
-
-        slides = generate_slides(prompt, num)
-        ppt = build_ppt(slides)
+        slides = generate_slide_content(data["prompt"], data["num_slides"])
+        ppt = build_pptx(slides)
 
         return send_file(
-            ppt,
+            io.BytesIO(ppt),
             as_attachment=True,
             download_name="presentation.pptx",
             mimetype="application/vnd.openxmlformats-officedocument.presentationml.presentation"
         )
-
     except Exception as e:
-        print("ERROR:", str(e))   # 👈 VERY IMPORTANT
-        return jsonify({"error": str(e)}), 500
-
+        return jsonify({"error":str(e)}),500
 
 @app.route("/generate-website", methods=["POST"])
-def generate_site():
+def gen_web():
     try:
         data = request.get_json(force=True)
-        prompt = data.get("prompt", "")
+        html = generate_website_code(data["prompt"])
 
-        html = generate_website_code(prompt)
+        name = f"site_{uuid.uuid4().hex[:6]}.html"
+        path = os.path.join(SITES_FOLDER, name)
 
-        filename = f"site_{uuid.uuid4().hex[:6]}.html"
-        filepath = os.path.join(SITES_FOLDER, filename)
-
-        with open(filepath, "w", encoding="utf-8") as f:
+        with open(path,"w") as f:
             f.write(html)
 
         return jsonify({
-            "success": True,
-            "preview_url": f"/preview/{filename}",
-            "download_url": f"/download-site/{filename}"
+            "success":True,
+            "preview_url":f"/preview/{name}",
+            "download_url":f"/download-site/{name}"
         })
-
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error":str(e)}),500
 
+@app.route("/preview/<f>")
+def preview(f):
+    return send_from_directory(SITES_FOLDER,f)
 
-@app.route("/preview/<filename>")
-def preview_site(filename):
-    return send_from_directory(SITES_FOLDER, filename)
+@app.route("/download-site/<f>")
+def download(f):
+    return send_from_directory(SITES_FOLDER,f,as_attachment=True)
 
-
-@app.route("/download-site/<filename>")
-def download_site(filename):
-    return send_from_directory(
-        SITES_FOLDER,
-        filename,
-        as_attachment=True,
-        download_name=filename.replace("site_", "website_")
-    )
-
-# ─────────────────────────────────────────
-# RUN
-# ─────────────────────────────────────────
+# ─── RUN ────────────────────────────
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    print(f"Running on port {port}")
+    port = int(os.environ.get("PORT",5000))
     app.run(host="0.0.0.0", port=port)

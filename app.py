@@ -8,11 +8,7 @@ import json, io, os, uuid, requests
 
 app = Flask(__name__)
 
-# ✅ FIXED CORS (IMPORTANT)
-CORS(app, supports_credentials=True)
-
-from flask_cors import CORS
-
+# ✅ CLEAN CORS (NO DUPLICATE / NO CONFLICT)
 CORS(app)
 
 @app.before_request
@@ -25,7 +21,7 @@ def handle_options():
         return response
 
 @app.after_request
-def add_cors_headers(response):
+def add_headers(response):
     response.headers["Access-Control-Allow-Origin"] = "*"
     response.headers["Access-Control-Allow-Headers"] = "Content-Type,Authorization"
     response.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
@@ -93,23 +89,22 @@ def build_pptx(slides):
 # ---------------- AI PPT ---------------- #
 
 def generate_slide_content(prompt, n):
-    if not API_KEY:
-        raise Exception("GROQ_API_KEY missing")
-
     try:
+        if not API_KEY:
+            raise Exception("Missing GROQ_API_KEY")
+
         client = Groq(api_key=API_KEY)
 
         res = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[
-                {"role": "system", "content": "Return ONLY valid JSON array"},
-                {"role": "user", "content": prompt}
+                {"role":"system","content":"Return ONLY JSON array"},
+                {"role":"user","content":prompt}
             ]
         )
 
         raw = res.choices[0].message.content.strip()
 
-        # clean markdown
         if "```" in raw:
             raw = raw.split("```")[1]
 
@@ -118,24 +113,23 @@ def generate_slide_content(prompt, n):
     except Exception as e:
         print("GROQ ERROR:", str(e))
 
-        # ✅ FALLBACK (VERY IMPORTANT)
-        slides = []
-        for i in range(n):
-            slides.append({
+        # ✅ FALLBACK (ALWAYS WORK)
+        return [
+            {
                 "title": f"{prompt} - Slide {i+1}",
-                "explanation": "Auto-generated content",
+                "explanation": "Auto generated content",
                 "bullets": ["Point 1", "Point 2", "Point 3"]
-            })
-
-        return slides
+            }
+            for i in range(n)
+        ]
 
 # ---------------- AI WEBSITE ---------------- #
 
 def generate_website_code(prompt):
-    if not API_KEY:
-        return "<h1>API key missing</h1>"
-
     try:
+        if not API_KEY:
+            raise Exception("Missing GROQ_API_KEY")
+
         client = Groq(api_key=API_KEY)
 
         res = client.chat.completions.create(
@@ -170,18 +164,18 @@ def home():
 def health():
     return jsonify({"status":"ok"})
 
-# ✅ PPT ROUTE WITH OPTIONS FIX
 @app.route("/generate", methods=["POST", "OPTIONS"])
 def generate_ppt():
     if request.method == "OPTIONS":
         return jsonify({"ok": True})
 
     try:
-        data = request.get_json(silent=True)
-        if not data:
-            return jsonify({"error":"Invalid JSON"}), 400
+        data = request.get_json(force=True)
 
-        slides = generate_slide_content(data["prompt"], data["num_slides"])
+        prompt = data.get("prompt")
+        num_slides = int(data.get("num_slides", 5))
+
+        slides = generate_slide_content(prompt, num_slides)
         ppt = build_pptx(slides)
 
         return send_file(
@@ -192,20 +186,18 @@ def generate_ppt():
         )
 
     except Exception as e:
+        print("ERROR:", str(e))
         return jsonify({"error": str(e)}), 500
 
-# ✅ WEBSITE ROUTE WITH OPTIONS FIX
 @app.route("/generate-website", methods=["POST", "OPTIONS"])
 def generate_website():
     if request.method == "OPTIONS":
         return jsonify({"ok": True})
 
     try:
-        data = request.get_json(silent=True)
-        if not data:
-            return jsonify({"error":"Invalid JSON"}), 400
+        data = request.get_json(force=True)
 
-        html = generate_website_code(data["prompt"])
+        html = generate_website_code(data.get("prompt"))
 
         name = f"site_{uuid.uuid4().hex[:6]}.html"
         path = os.path.join(SITES_FOLDER, name)
@@ -219,6 +211,7 @@ def generate_website():
         })
 
     except Exception as e:
+        print("ERROR:", str(e))
         return jsonify({"error": str(e)}), 500
 
 @app.route("/preview/<f>")

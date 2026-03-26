@@ -50,39 +50,29 @@ def build_ppt(slides_data):
     return buf
 
 def generate_slides(prompt, num):
-    client = Groq(api_key=API_KEY)
-
-    system_prompt = f"""
-    Create {num} slides.
-    Return ONLY valid JSON:
-    [
-      {{
-        "title": "...",
-        "explanation": "...",
-        "bullets": ["...", "..."]
-      }}
-    ]
-    """
-
-    response = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": prompt}
-        ]
-    )
-
-    data = response.choices[0].message.content.strip()
-
-    if "```" in data:
-        data = data.split("```")[1]
-
     try:
+        client = Groq(api_key=API_KEY)
+
+        res = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {"role": "system", "content": "Return JSON slides"},
+                {"role": "user", "content": prompt}
+            ]
+        )
+
+        data = res.choices[0].message.content.strip()
+
+        if "```" in data:
+            data = data.split("```")[1]
+
         return json.loads(data)
-    except:
+
+    except Exception as e:
+        print("GROQ ERROR:", str(e))
         return [{
             "title": "Error",
-            "explanation": "AI response failed",
+            "explanation": "AI failed",
             "bullets": ["Try again"]
         }]
 
@@ -147,6 +137,7 @@ def generate_ppt():
         )
 
     except Exception as e:
+        print("ERROR:", str(e))   # 👈 VERY IMPORTANT
         return jsonify({"error": str(e)}), 500
 
 

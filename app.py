@@ -24,14 +24,14 @@ def add_text(slide, text, size, x, y):
     box = slide.shapes.add_textbox(Inches(x), Inches(y), Inches(10), Inches(2))
     p = box.text_frame.paragraphs[0]
     run = p.add_run()
-    run.text = text
+    run.text = str(text)
     run.font.size = Pt(size)
     run.font.color.rgb = C_WHITE
 
 def add_image(slide, query, x, y, w, h):
     try:
         url = f"https://source.unsplash.com/800x600/?{query}"
-        img_data = requests.get(url).content
+        img_data = requests.get(url, timeout=5).content   # ✅ timeout added
         img_path = "temp.jpg"
 
         with open(img_path, "wb") as f:
@@ -44,30 +44,24 @@ def add_image(slide, query, x, y, w, h):
 def build_pptx(slides):
     prs = Presentation()
 
-    for i, s in enumerate(slides):
+    for s in slides:
         slide = prs.slides.add_slide(prs.slide_layouts[6])
 
-        # Background
         bg = slide.background.fill
         bg.solid()
         bg.fore_color.rgb = C_BG
 
-        # Title
-        add_text(slide, s["title"], 40, 0.5, 0.5)
-
-        # Explanation
+        add_text(slide, s.get("title", "Title"), 40, 0.5, 0.5)
         add_text(slide, s.get("explanation",""), 18, 0.5, 2)
 
-        # 🔥 IMAGE
-        add_image(slide, s["title"], 8, 1.5, 4, 3)
+        add_image(slide, s.get("title","presentation"), 8, 1.5, 4, 3)
 
         bullets = s.get("bullets", [])
-        y = 8
+        y = 5
 
         for idx, b in enumerate(bullets[:5]):
-            add_text(slide, f"{idx+1}", 20, 0.5, y)
-            add_text(slide, b, 18, 1.2, y)
-            y += 0.7
+            add_text(slide, f"{idx+1}. {b}", 18, 0.5, y)
+            y += 0.6
 
     buf = io.BytesIO()
     prs.save(buf)
@@ -82,20 +76,14 @@ def generate_slide_content(prompt, n):
     system_prompt = f"""
 Create {n} slides EXACTLY like a professional course PPT.
 
-Structure:
-- Title slide
-- Concept slides
-- Numbered slides (1,2,3,4,5)
-- KEY POINTS slide
-- 01,02 format slide
-- Conclusion with ✦
-
-Each slide must have:
-- title
-- explanation
-- bullets
-
-Return ONLY JSON array.
+Return ONLY valid JSON array like:
+[
+  {{
+    "title": "...",
+    "explanation": "...",
+    "bullets": ["...", "..."]
+  }}
+]
 """
 
     res = client.chat.completions.create(
@@ -108,46 +96,31 @@ Return ONLY JSON array.
 
     raw = res.choices[0].message.content.strip()
 
-    if "```" in raw:
+    # ✅ FIX: clean markdown safely
+    if raw.startswith("```"):
         raw = raw.split("```")[1]
 
-    return json.loads(raw)
+    try:
+        return json.loads(raw)
+    except:
+        raise Exception("AI returned invalid JSON")
 
 # ---------------- AI WEBSITE ---------------- #
 
 def generate_website_code(prompt):
     client = Groq(api_key=API_KEY)
 
-    system = f"""
-You are a senior frontend developer.
-
-Create a PREMIUM modern website.
-
-IMPORTANT:
-- Use images from Unsplash like:
-  https://source.unsplash.com/featured/?{prompt}
-- Add images in hero, features, testimonials
-- Use full CSS styling
-- Responsive design
-- Gradients, shadows, animations
-
-Sections:
-Navbar, Hero, Features, Stats, Testimonials, Contact, Footer
-
-Return ONLY HTML.
-"""
-
     res = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[
-            {"role":"system","content":system},
+            {"role":"system","content":"Return ONLY HTML code"},
             {"role":"user","content":prompt}
         ]
     )
 
     html = res.choices[0].message.content.strip()
 
-    if "```" in html:
+    if html.startswith("```"):
         html = html.split("```")[1]
 
     if not html.lower().startswith("<!doctype"):
@@ -165,11 +138,19 @@ def home():
 def health():
     return jsonify({"status":"ok"})
 
+# ✅ FIXED (IMPORTANT)
 @app.route("/generate", methods=["POST"])
 def generate_ppt():
     try:
-        data = request.get_json(force=True)
-        slides = generate_slide_content(data["prompt"], data["num_slides"])
+        data = request.get_json(silent=True)
+
+        if not data:
+            return jsonify({"error": "Invalid JSON"}), 400
+
+        prompt = data.get("prompt")
+        num_slides = int(data.get("num_slides", 5))
+
+        slides = generate_slide_content(prompt, num_slides)
         ppt = build_pptx(slides)
 
         return send_file(
@@ -178,14 +159,19 @@ def generate_ppt():
             download_name="presentation.pptx",
             mimetype="application/vnd.openxmlformats-officedocument.presentationml.presentation"
         )
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 @app.route("/generate-website", methods=["POST"])
 def generate_website():
     try:
-        data = request.get_json(force=True)
-        html = generate_website_code(data["prompt"])
+        data = request.get_json(silent=True)
+
+        if not data:
+            return jsonify({"error": "Invalid JSON"}), 400
+
+        html = generate_website_code(data.get("prompt"))
 
         name = f"site_{uuid.uuid4().hex[:6]}.html"
         path = os.path.join(SITES_FOLDER, name)
@@ -198,6 +184,7 @@ def generate_website():
             "preview_url": f"/preview/{name}",
             "download_url": f"/download-site/{name}"
         })
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

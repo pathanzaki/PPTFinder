@@ -6,8 +6,9 @@ from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
 import json, io, os, uuid
-
+from flask_cors import CORS
 app = Flask(__name__)
+CORS(app)
 
 # ─── CONFIG ───────────────────────────────────────────────
 # On Render, set GROQ_API_KEY in Environment Variables (not hardcoded)
@@ -271,6 +272,8 @@ STRICT RULES:
 # ═════════════════════════════════════════════════════════
 # ===== ROUTES =====
 
+# ===== ROUTES =====
+
 @app.route("/")
 def home():
     return jsonify({"message": "PPTFinder API is running 🚀"})
@@ -279,9 +282,10 @@ def home():
 def health():
     return jsonify({"status": "ok"})
 
+
 @app.route("/generate", methods=["POST"])
 def generate_ppt():
-    data = request.get_json()
+    data = request.get_json(force=True)
     prompt = data.get("prompt", "").strip()
     num_slides = int(data.get("num_slides", 12))
 
@@ -305,7 +309,7 @@ def generate_ppt():
 
 @app.route("/generate-website", methods=["POST"])
 def generate_website():
-    data = request.get_json()
+    data = request.get_json(force=True)
     prompt = data.get("prompt", "").strip()
 
     if not prompt:

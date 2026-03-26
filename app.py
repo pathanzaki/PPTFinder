@@ -58,76 +58,42 @@ def build_pptx(slides_data):
     return buf.read()
 
 # ─── AI PPT CONTENT ─────────────────
-def generate_slide_content(prompt, n):
+def generate_website_code(prompt):
     client = Groq(api_key=API_KEY)
 
-    system_prompt = f"""
-You are a professional presentation generator.
+    system = """
+    You are an elite UI/UX designer.
 
-Create EXACTLY {n} slides in this STRICT format:
+    Generate a modern SaaS website.
 
-Each slide must follow one of these patterns:
+    Include:
+    - Navbar
+    - Hero section
+    - Features cards
+    - Stats
+    - Testimonials
+    - Contact form
+    - Footer
 
-1. TITLE SLIDE
-- Big title
-- Description paragraph
+    Use animations, gradients, responsive design.
 
-2. CONTENT SLIDE TYPE A
-- Title
-- Explanation paragraph
-- 5 bullet points (numbered)
+    Return ONLY full HTML.
+    """
 
-3. CONTENT SLIDE TYPE B (KEY POINTS)
-- Title
-- Explanation
-- Section header: KEY POINTS
-- 4–5 short bullet points
-
-4. CONTENT SLIDE TYPE C (NUMBERED STYLE)
-- Title
-- Explanation
-- Points like:
-  01
-  02
-  03
-  04
-
-5. FINAL SLIDE (CONCLUSION)
-- Summary paragraph
-- 3 highlight points with ✦
-
-IMPORTANT:
-- Make slides structured like professional PPT
-- No repetition
-- Clean content
-
-Return ONLY JSON array.
-"""
-
-    response = client.chat.completions.create(
+    res = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": prompt}
+            {"role":"system","content":system},
+            {"role":"user","content":prompt}
         ]
     )
 
-    raw = response.choices[0].message.content.strip()
+    html = res.choices[0].message.content.strip()
 
-    # remove ``` if present
-    if "```" in raw:
-        raw = raw.split("```")[1]
+    if not html.lower().startswith("<!doctype"):
+        html = "<!DOCTYPE html>\n" + html
 
-    try:
-        slides = json.loads(raw)
-    except:
-        slides = [{
-            "title": "Error",
-            "explanation": "AI parsing failed",
-            "bullets": ["Try again"]
-        }]
-
-    return slides
+    return html
 # ─── AI WEBSITE ─────────────────────
 def generate_website_code(prompt):
     client = Groq(api_key=API_KEY)

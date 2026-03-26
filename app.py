@@ -61,10 +61,10 @@ def build_pptx(slides_data):
 def generate_slide_content(prompt, n):
     client = Groq(api_key=API_KEY)
 
-   system_prompt = f"""
+    system_prompt = f"""
 You are a professional presentation generator.
 
-Create EXACTLY {num_slides} slides in this STRICT format:
+Create EXACTLY {n} slides in this STRICT format:
 
 Each slide must follow one of these patterns:
 
@@ -75,21 +75,13 @@ Each slide must follow one of these patterns:
 2. CONTENT SLIDE TYPE A
 - Title
 - Explanation paragraph
-- 8 bullet points with numbering:
-  1
-  2
-  3
-  4
-  5
-  6
-  7
-  8
+- 5 bullet points (numbered)
 
 3. CONTENT SLIDE TYPE B (KEY POINTS)
 - Title
 - Explanation
 - Section header: KEY POINTS
-- 7–8 short bullet points
+- 4–5 short bullet points
 
 4. CONTENT SLIDE TYPE C (NUMBERED STYLE)
 - Title
@@ -99,21 +91,43 @@ Each slide must follow one of these patterns:
   02
   03
   04
-  05
-  06
 
 5. FINAL SLIDE (CONCLUSION)
 - Summary paragraph
-- 5 highlight points with ✦ symbol
+- 3 highlight points with ✦
 
-IMPORTANT RULES:
-- Use same structure like professional PPT
-- Each slide must look different (variety)
+IMPORTANT:
+- Make slides structured like professional PPT
 - No repetition
-- Clean and structured
+- Clean content
 
 Return ONLY JSON array.
 """
+
+    response = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt}
+        ]
+    )
+
+    raw = response.choices[0].message.content.strip()
+
+    # remove ``` if present
+    if "```" in raw:
+        raw = raw.split("```")[1]
+
+    try:
+        slides = json.loads(raw)
+    except:
+        slides = [{
+            "title": "Error",
+            "explanation": "AI parsing failed",
+            "bullets": ["Try again"]
+        }]
+
+    return slides
 # ─── AI WEBSITE ─────────────────────
 def generate_website_code(prompt):
     client = Groq(api_key=API_KEY)

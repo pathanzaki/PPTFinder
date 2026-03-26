@@ -93,49 +93,72 @@ def build_pptx(slides):
 # ---------------- AI PPT ---------------- #
 
 def generate_slide_content(prompt, n):
-    client = Groq(api_key=API_KEY)
-
-    res = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        messages=[
-            {"role":"system","content":"Return ONLY JSON array"},
-            {"role":"user","content":prompt}
-        ]
-    )
-
-    raw = res.choices[0].message.content.strip()
-
-    if raw.startswith("```"):
-        raw = raw.split("```")[1]
+    if not API_KEY:
+        raise Exception("GROQ_API_KEY missing")
 
     try:
+        client = Groq(api_key=API_KEY)
+
+        res = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {"role": "system", "content": "Return ONLY valid JSON array"},
+                {"role": "user", "content": prompt}
+            ]
+        )
+
+        raw = res.choices[0].message.content.strip()
+
+        # clean markdown
+        if "```" in raw:
+            raw = raw.split("```")[1]
+
         return json.loads(raw)
-    except:
-        print("AI RAW:", raw)  # 🔥 debug
-        raise Exception("Invalid AI JSON")
+
+    except Exception as e:
+        print("GROQ ERROR:", str(e))
+
+        # ✅ FALLBACK (VERY IMPORTANT)
+        slides = []
+        for i in range(n):
+            slides.append({
+                "title": f"{prompt} - Slide {i+1}",
+                "explanation": "Auto-generated content",
+                "bullets": ["Point 1", "Point 2", "Point 3"]
+            })
+
+        return slides
 
 # ---------------- AI WEBSITE ---------------- #
 
 def generate_website_code(prompt):
-    client = Groq(api_key=API_KEY)
+    if not API_KEY:
+        return "<h1>API key missing</h1>"
 
-    res = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        messages=[
-            {"role":"system","content":"Return ONLY HTML"},
-            {"role":"user","content":prompt}
-        ]
-    )
+    try:
+        client = Groq(api_key=API_KEY)
 
-    html = res.choices[0].message.content.strip()
+        res = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {"role":"system","content":"Return ONLY HTML"},
+                {"role":"user","content":prompt}
+            ]
+        )
 
-    if html.startswith("```"):
-        html = html.split("```")[1]
+        html = res.choices[0].message.content.strip()
 
-    if not html.lower().startswith("<!doctype"):
-        html = "<!DOCTYPE html>\n" + html
+        if "```" in html:
+            html = html.split("```")[1]
 
-    return html
+        if not html.lower().startswith("<!doctype"):
+            html = "<!DOCTYPE html>\n" + html
+
+        return html
+
+    except Exception as e:
+        print("WEBSITE ERROR:", str(e))
+        return f"<h1>Error generating website</h1><p>{str(e)}</p>"
 
 # ---------------- ROUTES ---------------- #
 

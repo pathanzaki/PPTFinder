@@ -15,12 +15,12 @@ SITES_FOLDER = os.path.join(os.path.dirname(__file__), "generated_sites")
 os.makedirs(SITES_FOLDER, exist_ok=True)
 
 # COLORS
-C_BG_DARK = RGBColor(10,10,24)
-C_BG_LIGHT = RGBColor(240,242,255)
-C_WHITE = RGBColor(255,255,255)
+C_BG = RGBColor(10, 10, 24)
+C_WHITE = RGBColor(255, 255, 255)
 
-# PPT HELPER
-def add_text(slide, text, size=28, x=1, y=1):
+# ---------------- PPT DESIGN ---------------- #
+
+def add_text(slide, text, size, x, y):
     box = slide.shapes.add_textbox(Inches(x), Inches(y), Inches(10), Inches(2))
     p = box.text_frame.paragraphs[0]
     run = p.add_run()
@@ -28,40 +28,57 @@ def add_text(slide, text, size=28, x=1, y=1):
     run.font.size = Pt(size)
     run.font.color.rgb = C_WHITE
 
-def build_pptx(slides_data):
+def build_pptx(slides):
     prs = Presentation()
 
-    for i, s in enumerate(slides_data):
+    for i, s in enumerate(slides):
         slide = prs.slides.add_slide(prs.slide_layouts[6])
 
+        # Background
         bg = slide.background.fill
         bg.solid()
-        bg.fore_color.rgb = C_BG_DARK if i % 2 == 0 else C_BG_LIGHT
+        bg.fore_color.rgb = C_BG
 
-        add_text(slide, s["title"], 36, 0.8, 0.8)
-        add_text(slide, s.get("explanation",""), 18, 0.8, 2)
+        # Title
+        add_text(slide, s["title"], 40, 0.5, 0.5)
 
+        # Explanation
+        add_text(slide, s.get("explanation",""), 18, 0.5, 2)
+
+        bullets = s.get("bullets", [])
         y = 4
-        for b in s.get("bullets", [])[:5]:
-            add_text(slide, f"• {b}", 16, 1, y)
-            y += 0.6
+
+        for idx, b in enumerate(bullets[:5]):
+            # Number style like your PPT
+            add_text(slide, f"{idx+1}", 20, 0.5, y)
+            add_text(slide, b, 18, 1.2, y)
+            y += 0.7
 
     buf = io.BytesIO()
     prs.save(buf)
     buf.seek(0)
     return buf.read()
 
-# AI PPT
+# ---------------- AI PPT ---------------- #
+
 def generate_slide_content(prompt, n):
     client = Groq(api_key=API_KEY)
 
     system_prompt = f"""
-Generate {n} professional slides.
+Create {n} slides EXACTLY like a professional course PPT.
 
-Each slide must include:
+Structure:
+- Title slide
+- Concept slides
+- Numbered slides (1,2,3,4,5)
+- KEY POINTS slide
+- 01,02 format slide
+- Conclusion with ✦
+
+Each slide must have:
 - title
-- explanation (3-4 lines)
-- 5 bullet points
+- explanation
+- bullets
 
 Return ONLY JSON array.
 """
@@ -81,16 +98,25 @@ Return ONLY JSON array.
 
     return json.loads(raw)
 
-# AI WEBSITE (ONLY ONE FUNCTION)
+# ---------------- AI WEBSITE ---------------- #
+
 def generate_website_code(prompt):
     client = Groq(api_key=API_KEY)
 
     system = """
-You are an elite UI/UX designer.
+You are a senior frontend developer.
 
-Generate a modern SaaS website.
+Generate a COMPLETE modern SaaS website.
 
-Include navbar, hero, features, stats, testimonials, contact form, footer.
+STRICT:
+- Full HTML
+- CSS inside <style>
+- Responsive
+- Gradients, shadows, animations
+- Use Google Fonts
+
+Sections:
+Navbar, Hero, Features, Stats, Testimonials, Contact, Footer
 
 Return ONLY HTML.
 """
@@ -113,7 +139,8 @@ Return ONLY HTML.
 
     return html
 
-# ROUTES
+# ---------------- ROUTES ---------------- #
+
 @app.route("/")
 def home():
     return jsonify({"message":"PPTFinder API running 🚀"})
@@ -166,7 +193,8 @@ def preview(f):
 def download(f):
     return send_from_directory(SITES_FOLDER, f, as_attachment=True)
 
-# RUN
+# ---------------- RUN ---------------- #
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)

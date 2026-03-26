@@ -1,30 +1,25 @@
-from flask import Flask, request, send_file, render_template, jsonify, send_from_directory
+from flask import Flask, request, send_file, jsonify, send_from_directory
 from flask_cors import CORS
 from groq import Groq
 from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
-from pptx.enum.text import PP_ALIGN
 import json, io, os, uuid
 
 app = Flask(__name__)
-
-# ✅ CORS FIX (important for Netlify)
 CORS(app, resources={r"/*": {"origins": "*"}})
 
-# ─── CONFIG ─────────────────────────
-API_KEY = os.environ.get("GROQ_API_KEY")  # ✅ NEVER hardcode
+# CONFIG
+API_KEY = os.environ.get("GROQ_API_KEY")
 SITES_FOLDER = os.path.join(os.path.dirname(__file__), "generated_sites")
 os.makedirs(SITES_FOLDER, exist_ok=True)
 
-# ─── COLORS ─────────────────────────
-C_BG_DARK   = RGBColor(10,10,24)
-C_BG_LIGHT  = RGBColor(240,242,255)
-C_ACCENT1   = RGBColor(124,58,255)
-C_ACCENT2   = RGBColor(0,212,255)
-C_WHITE     = RGBColor(255,255,255)
+# COLORS
+C_BG_DARK = RGBColor(10,10,24)
+C_BG_LIGHT = RGBColor(240,242,255)
+C_WHITE = RGBColor(255,255,255)
 
-# ─── PPT HELPERS ────────────────────
+# PPT HELPER
 def add_text(slide, text, size=28, x=1, y=1):
     box = slide.shapes.add_textbox(Inches(x), Inches(y), Inches(10), Inches(2))
     p = box.text_frame.paragraphs[0]
@@ -39,7 +34,6 @@ def build_pptx(slides_data):
     for i, s in enumerate(slides_data):
         slide = prs.slides.add_slide(prs.slide_layouts[6])
 
-        # Background
         bg = slide.background.fill
         bg.solid()
         bg.fore_color.rgb = C_BG_DARK if i % 2 == 0 else C_BG_LIGHT
@@ -57,28 +51,49 @@ def build_pptx(slides_data):
     buf.seek(0)
     return buf.read()
 
-# ─── AI PPT CONTENT ─────────────────
+# AI PPT
+def generate_slide_content(prompt, n):
+    client = Groq(api_key=API_KEY)
+
+    system_prompt = f"""
+Generate {n} professional slides.
+
+Each slide must include:
+- title
+- explanation (3-4 lines)
+- 5 bullet points
+
+Return ONLY JSON array.
+"""
+
+    res = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[
+            {"role":"system","content":system_prompt},
+            {"role":"user","content":prompt}
+        ]
+    )
+
+    raw = res.choices[0].message.content.strip()
+
+    if "```" in raw:
+        raw = raw.split("```")[1]
+
+    return json.loads(raw)
+
+# AI WEBSITE (ONLY ONE FUNCTION)
 def generate_website_code(prompt):
     client = Groq(api_key=API_KEY)
 
     system = """
-    You are an elite UI/UX designer.
+You are an elite UI/UX designer.
 
-    Generate a modern SaaS website.
+Generate a modern SaaS website.
 
-    Include:
-    - Navbar
-    - Hero section
-    - Features cards
-    - Stats
-    - Testimonials
-    - Contact form
-    - Footer
+Include navbar, hero, features, stats, testimonials, contact form, footer.
 
-    Use animations, gradients, responsive design.
-
-    Return ONLY full HTML.
-    """
+Return ONLY HTML.
+"""
 
     res = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
@@ -90,62 +105,22 @@ def generate_website_code(prompt):
 
     html = res.choices[0].message.content.strip()
 
-    if not html.lower().startswith("<!doctype"):
-        html = "<!DOCTYPE html>\n" + html
-
-    return html
-# ─── AI WEBSITE ─────────────────────
-def generate_website_code(prompt):
-    client = Groq(api_key=API_KEY)
-
-        system = """
-    You are an elite UI/UX designer.
-
-    Generate a modern SaaS website.
-
-    Include:
-    - Navbar
-    - Hero section
-    - Features cards
-    - Stats
-    - Testimonials
-    - Contact form
-    - Footer
-
-    Use animations, gradients, responsive design.
-
-    Return ONLY full HTML.
-    """
-
-    res = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        messages=[
-            {"role":"system","content":system},
-            {"role":"user","content":prompt}
-        ]
-    )
-
-    html = res.choices[0].message.content.strip()
+    if "```" in html:
+        html = html.split("```")[1]
 
     if not html.lower().startswith("<!doctype"):
         html = "<!DOCTYPE html>\n" + html
 
     return html
 
-# ─── ROUTES ─────────────────────────
+# ROUTES
 @app.route("/")
-def index():
+def home():
     return jsonify({"message":"PPTFinder API running 🚀"})
 
 @app.route("/health")
 def health():
     return jsonify({"status":"ok"})
-
-# OPTIONS (CORS preflight)
-@app.route('/generate', methods=['OPTIONS'])
-@app.route('/generate-website', methods=['OPTIONS'])
-def opt():
-    return '', 200
 
 @app.route("/generate", methods=["POST"])
 def generate_ppt():
@@ -161,8 +136,7 @@ def generate_ppt():
             mimetype="application/vnd.openxmlformats-officedocument.presentationml.presentation"
         )
     except Exception as e:
-        print("ERROR:", str(e))
-        return jsonify({"error":str(e)}),500
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/generate-website", methods=["POST"])
 def generate_website():
@@ -173,28 +147,26 @@ def generate_website():
         name = f"site_{uuid.uuid4().hex[:6]}.html"
         path = os.path.join(SITES_FOLDER, name)
 
-        with open(path,"w", encoding="utf-8") as f:
+        with open(path, "w", encoding="utf-8") as f:
             f.write(html)
 
         return jsonify({
-            "success":True,
-            "preview_url":f"/preview/{name}",
-            "download_url":f"/download-site/{name}"
+            "success": True,
+            "preview_url": f"/preview/{name}",
+            "download_url": f"/download-site/{name}"
         })
     except Exception as e:
-        print("ERROR:", str(e))
-        return jsonify({"error":str(e)}),500
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/preview/<f>")
 def preview(f):
-    return send_from_directory(SITES_FOLDER,f)
+    return send_from_directory(SITES_FOLDER, f)
 
 @app.route("/download-site/<f>")
 def download(f):
-    return send_from_directory(SITES_FOLDER,f,as_attachment=True)
+    return send_from_directory(SITES_FOLDER, f, as_attachment=True)
 
-# ─── RUN ────────────────────────────
+# RUN
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    print(f"Running on port {port}")
     app.run(host="0.0.0.0", port=port)

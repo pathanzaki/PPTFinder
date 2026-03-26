@@ -4,7 +4,7 @@ from groq import Groq
 from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
-import json, io, os, uuid
+import json, io, os, uuid, requests
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
@@ -28,6 +28,19 @@ def add_text(slide, text, size, x, y):
     run.font.size = Pt(size)
     run.font.color.rgb = C_WHITE
 
+def add_image(slide, query, x, y, w, h):
+    try:
+        url = f"https://source.unsplash.com/800x600/?{query}"
+        img_data = requests.get(url).content
+        img_path = "temp.jpg"
+
+        with open(img_path, "wb") as f:
+            f.write(img_data)
+
+        slide.shapes.add_picture(img_path, Inches(x), Inches(y), Inches(w), Inches(h))
+    except:
+        pass
+
 def build_pptx(slides):
     prs = Presentation()
 
@@ -45,11 +58,13 @@ def build_pptx(slides):
         # Explanation
         add_text(slide, s.get("explanation",""), 18, 0.5, 2)
 
+        # 🔥 IMAGE
+        add_image(slide, s["title"], 8, 1.5, 4, 3)
+
         bullets = s.get("bullets", [])
-        y = 4
+        y = 8
 
         for idx, b in enumerate(bullets[:5]):
-            # Number style like your PPT
             add_text(slide, f"{idx+1}", 20, 0.5, y)
             add_text(slide, b, 18, 1.2, y)
             y += 0.7
@@ -103,17 +118,18 @@ Return ONLY JSON array.
 def generate_website_code(prompt):
     client = Groq(api_key=API_KEY)
 
-    system = """
+    system = f"""
 You are a senior frontend developer.
 
-Generate a COMPLETE modern SaaS website.
+Create a PREMIUM modern website.
 
-STRICT:
-- Full HTML
-- CSS inside <style>
-- Responsive
+IMPORTANT:
+- Use images from Unsplash like:
+  https://source.unsplash.com/featured/?{prompt}
+- Add images in hero, features, testimonials
+- Use full CSS styling
+- Responsive design
 - Gradients, shadows, animations
-- Use Google Fonts
 
 Sections:
 Navbar, Hero, Features, Stats, Testimonials, Contact, Footer

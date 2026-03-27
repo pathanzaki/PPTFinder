@@ -1,34 +1,136 @@
-from flask import Flask, request, send_file, render_template, jsonify, send_from_directory
+from flask import Flask, request, send_file, jsonify, send_from_directory
 from flask_cors import CORS
 from groq import Groq
 from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
-from pptx.enum.text import PP_ALIGN
 import json, io, os, re, uuid
 
 app = Flask(__name__)
+
+# ✅ CORS FIX
 CORS(app)
 
-# 🔥 IMPORTANT: ENV VARIABLE USE (DON'T HARDCODE KEY)
+@app.after_request
+def after(response):
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type,Authorization"
+    response.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
+    return response
+
+# ✅ ENV API KEY (IMPORTANT)
 API_KEY = os.environ.get("GROQ_API_KEY")
 
+# FOLDER
 GENERATED_SITES_DIR = os.path.join(os.path.dirname(__file__), "generated_sites")
 os.makedirs(GENERATED_SITES_DIR, exist_ok=True)
 
-# ---------------- SAFE GROQ PPT ---------------- #
+# COLORS
+WHITE = RGBColor(255,255,255)
+BLACK = RGBColor(0,0,0)
 
-def gen_ppt_content(prompt, num_slides):
+# ═════════════════════════════════════════════════════
+# PPT DESIGN
+# ═════════════════════════════════════════════════════
+
+def add_text(slide, text, size, x, y):
+    box = slide.shapes.add_textbox(Inches(x), Inches(y), Inches(10), Inches(2))
+    p = box.text_frame.paragraphs[0]
+    run = p.add_run()
+    run.text = str(text)
+    run.font.size = Pt(size)
+    run.font.color.rgb = WHITE
+
+def build_pptx(slides):
+    prs = Presentation()
+
+    for s in slides:
+        slide = prs.slides.add_slide(prs.slide_layouts[6])
+
+        # background
+        bg = slide.background.fill
+        bg.solid()
+        bg.fore_color.rgb = BLACK
+
+        # title
+        add_text(slide, s.get("title","Title"), 40, 0.5, 0.5)
+
+        # explanation
+        add_text(slide, s.get("explanation",""), 18, 0.5, 2)
+
+        # bullets
+        y = 5
+        for i,b in enumerate(s.get("bullets",[])[:5]):
+            add_text(slide, f"{i+1}. {b}", 16, 0.5, y)
+            y += 0.6
+
+    buf = io.BytesIO()
+    prs.save(buf)
+    buf.seek(0)
+    return buf.read()
+
+# ═════════════════════════════════════════════════════
+# GROQ PPT
+# ═════════════════════════════════════════════════════
+
+def gen_ppt_content(prompt, n):
+    if not API_KEY:
+        raise Exception("GROQ_API_KEY missing")
+
     try:
-        if not API_KEY:
-            raise Exception("Missing GROQ_API_KEY")
-
         client = Groq(api_key=API_KEY)
 
         res = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[
                 {"role":"system","content":"Return ONLY JSON array"},
+                {"role":"user","content":f"Create {n} slides about {prompt}"}
+            ]
+        )
+
+        raw = res.choices[0].message.content.strip()
+
+        if "```" in raw:
+            raw = raw.split("```")[1]
+
+        try:
+            return json.loads(raw)
+        except Exception:
+            print("BAD JSON:", raw)
+            raise Exception("Invalid AI JSON")
+
+    except Exception as e:
+        print("GROQ ERROR:", e)
+
+        # fallback
+        slides = []
+        for i in range(n):
+            slides.append({
+                "title": f"{prompt} - Slide {i+1}",
+                "explanation": "Auto generated content",
+                "bullets": ["Point 1","Point 2","Point 3"]
+            })
+        return slides
+
+# ═════════════════════════════════════════════════════
+# GROQ WEBSITE
+# ═════════════════════════════════════════════════════
+
+def gen_website(prompt):
+    if not API_KEY:
+        return {
+            "html": f"<h1>{prompt}</h1><p>No API key</p>",
+            "site_title": prompt,
+            "description": "fallback"
+        }
+
+    try:
+        client = Groq(api_key=API_KEY)
+
+        res = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {"role":"system","content":"Return JSON with html"},
                 {"role":"user","content":prompt}
             ]
         )
@@ -38,104 +140,47 @@ def gen_ppt_content(prompt, num_slides):
         if "```" in raw:
             raw = raw.split("```")[1]
 
-        return json.loads(raw)
+        try:
+            return json.loads(raw)
+        except Exception:
+            print("WEBSITE JSON ERROR:", raw)
+            raise Exception("Invalid website JSON")
 
     except Exception as e:
-        print("🔥 GROQ ERROR:", str(e))
+        print("WEBSITE ERROR:", e)
+        return {
+            "html": f"<h1>{prompt}</h1><p>Error generating</p>",
+            "site_title": prompt,
+            "description": "error fallback"
+        }
 
-        # ✅ FALLBACK (NO CRASH)
-        slides = []
-        for i in range(num_slides):
-            slides.append({
-                "title": f"{prompt} - Slide {i+1}",
-                "slide_type": "content",
-                "explanation": "Auto generated content",
-                "bullets": ["Point 1","Point 2","Point 3","Point 4","Point 5"]
-            })
-
-        if slides:
-            slides[0]["slide_type"] = "title"
-            slides[-1]["slide_type"] = "conclusion"
-
-        return slides
-
-# ---------------- SIMPLE PPT BUILDER ---------------- #
-
-def build_pptx(slides):
-    prs = Presentation()
-
-    for s in slides:
-        slide = prs.slides.add_slide(prs.slide_layouts[1])
-
-        title = slide.shapes.title
-        body = slide.placeholders[1]
-
-        title.text = s.get("title","Title")
-
-        content = s.get("explanation","") + "\n\n"
-        for b in s.get("bullets", []):
-            content += f"• {b}\n"
-
-        body.text = content
-
-    buf = io.BytesIO()
-    prs.save(buf)
-    buf.seek(0)
-    return buf.read()
-
-# ---------------- SAFE WEBSITE ---------------- #
-
-def gen_website(prompt):
-    try:
-        if not API_KEY:
-            raise Exception("Missing API key")
-
-        client = Groq(api_key=API_KEY)
-
-        res = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[
-                {"role":"system","content":"Return ONLY HTML"},
-                {"role":"user","content":prompt}
-            ]
-        )
-
-        html = res.choices[0].message.content.strip()
-
-        if "```" in html:
-            html = html.split("```")[1]
-
-        if not html.lower().startswith("<!doctype"):
-            html = "<!DOCTYPE html>\n" + html
-
-        return html
-
-    except Exception as e:
-        print("🔥 WEBSITE ERROR:", str(e))
-        return f"<h1>Error</h1><p>{str(e)}</p>"
-
-# ---------------- ROUTES ---------------- #
+# ═════════════════════════════════════════════════════
+# ROUTES
+# ═════════════════════════════════════════════════════
 
 @app.route("/")
-def index():
-    return "API running 🚀"
+def home():
+    return jsonify({"message":"API Running"})
 
 @app.route("/health")
 def health():
     return jsonify({"status":"ok"})
 
-@app.route("/generate", methods=["POST"])
+# PPT
+@app.route("/generate", methods=["POST","OPTIONS"])
 def generate_ppt():
+    if request.method == "OPTIONS":
+        return jsonify({"ok": True})
+
+    data = request.get_json()
+    prompt = data.get("prompt","").strip()
+    n = int(data.get("num_slides",12))
+
+    if not prompt:
+        return jsonify({"error":"Enter topic"}),400
+
     try:
-        data = request.get_json(force=True)
-
-        prompt = data.get("prompt","").strip()
-        num_slides = int(data.get("num_slides", 10))
-
-        if not prompt:
-            return jsonify({"error":"Enter topic"}), 400
-
-        slides = gen_ppt_content(prompt, num_slides)
+        slides = gen_ppt_content(prompt,n)
         ppt = build_pptx(slides)
 
         return send_file(
@@ -146,16 +191,23 @@ def generate_ppt():
         )
 
     except Exception as e:
-        print("🔥 ERROR:", str(e))
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error":str(e)}),500
 
-@app.route("/generate-website", methods=["POST"])
+# WEBSITE
+@app.route("/generate-website", methods=["POST","OPTIONS"])
 def generate_website():
-    try:
-        data = request.get_json(force=True)
-        prompt = data.get("prompt","")
+    if request.method == "OPTIONS":
+        return jsonify({"ok": True})
 
-        html = gen_website(prompt)
+    data = request.get_json()
+    prompt = data.get("prompt","").strip()
+
+    if not prompt:
+        return jsonify({"error":"Enter prompt"}),400
+
+    try:
+        result = gen_website(prompt)
+        html = result.get("html","")
 
         filename = f"site_{uuid.uuid4().hex[:6]}.html"
         path = os.path.join(GENERATED_SITES_DIR, filename)
@@ -164,23 +216,20 @@ def generate_website():
             f.write(html)
 
         return jsonify({
-            "preview_url": f"/preview/{filename}",
-            "download_url": f"/download-site/{filename}"
+            "html": html,
+            "filename": filename,
+            "site_title": result.get("site_title",""),
+            "description": result.get("description","")
         })
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@app.route("/preview/<f>")
-def preview(f):
-    return send_from_directory(GENERATED_SITES_DIR, f)
+        return jsonify({"error":str(e)}),500
 
 @app.route("/download-site/<f>")
 def download(f):
     return send_from_directory(GENERATED_SITES_DIR, f, as_attachment=True)
 
-# ---------------- RUN ---------------- #
-
+# RUN
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
+    port = int(os.environ.get("PORT",5000))
     app.run(host="0.0.0.0", port=port)

@@ -529,7 +529,7 @@ RULES:
 
     client = Groq(api_key=API_KEY)
     resp = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
+        model="llama-3.1-8b-instant",
         messages=[
             {"role": "system", "content": system},
             {"role": "user",   "content": f"Create a {num_slides}-slide presentation: {prompt}"}
@@ -606,7 +606,7 @@ Return ONLY the JSON object. No markdown outside it."""
 def gen_website(prompt):
     client = Groq(api_key=API_KEY)
     resp = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
+        model="llama-3.1-8b-instant",
         messages=[
             {"role": "system", "content": WEBSITE_PROMPT},
             {"role": "user",   "content": f"Build a complete website for: {prompt}"}

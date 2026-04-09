@@ -5,14 +5,12 @@ from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
 import json, io, os, re, uuid
-
+import requests
 
 app = Flask(__name__)
 
-
 # ── PUT YOUR GROQ API KEY HERE ──────────────────────────
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+API_KEY = os.environ.get("API_KEY")
 # ────────────────────────────────────────────────────────
 
 SITES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "generated_sites")
@@ -156,47 +154,6 @@ def s_title(prs, d, T):
        "PPTFinders AI  |  pptfinders.com",
        10, italic=True, color=C(0xFF, 0xFF, 0xFF))
 
-def call_ai(messages, max_tokens=1200):
-    # Try Groq
-    try:
-        client = Groq(api_key=GROQ_API_KEY)
-        resp = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
-            messages=messages,
-            max_tokens=max_tokens,
-        )
-        content = resp.choices[0].message.content
-        if content:
-            return content
-    except Exception as e:
-        print("Groq failed:", e)
-
-    # Fallback → OpenRouter
-    try:
-        import requests
-        response = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                "Content-Type": "application/json"
-            },
-            json={
-                "model": "mistralai/mistral-7b-instruct",
-                "messages": messages,
-                "max_tokens": max_tokens
-            },
-            timeout=25
-        )
-
-        data = response.json()
-        print("OpenRouter response:", data)
-
-        return data.get("choices", [{}])[0].get("message", {}).get("content")
-
-    except Exception as e:
-        print("OpenRouter failed:", e)
-
-    raise Exception("All AI services failed")
 
 def s_two_col(prs, d, T, num):
     sl = prs.slides.add_slide(prs.slide_layouts[6])
@@ -569,10 +526,17 @@ RULES:
   Slides 2-{num_slides-1} → "content" (exactly {cc} slides, each covering a DIFFERENT subtopic)
   Return ONLY the raw JSON array."""
 
-    raw = call_ai([
-    {"role": "system", "content": system},
-    {"role": "user", "content": f"Create a {num_slides}-slide presentation: {prompt}"}
-    ])
+    client = Groq(api_key=API_KEY)
+    resp = client.chat.completions.create(
+        model="llama-3.1-8b-instant",
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user",   "content": f"Create a {num_slides}-slide presentation: {prompt}"}
+        ],
+        temperature=0.58,
+        max_tokens=2000,
+    )
+    raw = resp.choices[0].message.content.strip()
     # Strip markdown fences
     if "```" in raw:
         raw = raw.split("```")[1]
@@ -639,10 +603,18 @@ COLOR: warm palette for food/lifestyle, cool/blue for tech, green for eco/health
 Return ONLY the JSON object. No markdown outside it."""
 
 def gen_website(prompt):
-    raw = call_ai([
-    {"role": "system", "content": WEBSITE_PROMPT},
-    {"role": "user", "content": f"Build a complete website for: {prompt}"}
-    ])
+    client = Groq(api_key=API_KEY)
+    resp = client.chat.completions.create(
+        model="llama-3.1-8b-instant",
+        messages=[
+            {"role": "system", "content": WEBSITE_PROMPT},
+            {"role": "user",   "content": f"Build a complete website for: {prompt}"}
+        ],
+        temperature=0.68,
+        max_tokens=2000,
+    )
+    raw = resp.choices[0].message.content.strip()
+    # Strip fences
     if "```" in raw:
         for part in raw.split("```"):
             part = part.strip()

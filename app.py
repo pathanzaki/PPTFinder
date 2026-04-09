@@ -6,7 +6,7 @@ from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
 import json, io, os, re, uuid
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder="templates")
 
 # ── PUT YOUR GROQ API KEY HERE ──────────────────────────
 

@@ -11,7 +11,7 @@ app = Flask(__name__)
 
 
 # ── PUT YOUR GROQ API KEY HERE ──────────────────────────
-GROQ_API_KEY = os.getenv("API_KEY")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 # ────────────────────────────────────────────────────────
 
@@ -561,7 +561,7 @@ RULES:
   Slides 2-{num_slides-1} → "content" (exactly {cc} slides, each covering a DIFFERENT subtopic)
   Return ONLY the raw JSON array."""
 
-    client = Groq(api_key=API_KEY)
+    client = Groq(api_key=GROQ_API_KEY)
     resp = client.chat.completions.create(
         model="llama-3.1-8b-instant",
         messages=[
@@ -638,7 +638,7 @@ COLOR: warm palette for food/lifestyle, cool/blue for tech, green for eco/health
 Return ONLY the JSON object. No markdown outside it."""
 
 def gen_website(prompt):
-    client = Groq(api_key=API_KEY)
+    client = Groq(api_key=GROQ_API_KEY)
     resp = client.chat.completions.create(
         model="llama-3.1-8b-instant",
         messages=[

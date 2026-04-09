@@ -157,22 +157,21 @@ def s_title(prs, d, T):
        10, italic=True, color=C(0xFF, 0xFF, 0xFF))
 
 def call_ai(messages, max_tokens=1200):
-    # 1️⃣ Try Groq first
+    # Try Groq
     try:
         client = Groq(api_key=GROQ_API_KEY)
         resp = client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=messages,
             max_tokens=max_tokens,
-            temperature=0.5
         )
         return resp.choices[0].message.content
-
     except Exception as e:
-        print("Groq failed, switching to OpenRouter...", str(e))
+        print("Groq failed:", e)
 
-    # 2️⃣ Fallback → OpenRouter
+    # Fallback → OpenRouter
     try:
+        import requests
         response = requests.post(
             "https://openrouter.ai/api/v1/chat/completions",
             headers={
@@ -187,10 +186,10 @@ def call_ai(messages, max_tokens=1200):
         )
         data = response.json()
         return data["choices"][0]["message"]["content"]
-
     except Exception as e:
-        print("OpenRouter also failed:", str(e))
+        print("OpenRouter failed:", e)
         raise Exception("All AI services failed")
+        
 def s_two_col(prs, d, T, num):
     sl = prs.slides.add_slide(prs.slide_layouts[6])
     set_bg(sl, T['light'])

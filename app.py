@@ -165,7 +165,9 @@ def call_ai(messages, max_tokens=1200):
             messages=messages,
             max_tokens=max_tokens,
         )
-        return resp.choices[0].message.content
+        content = resp.choices[0].message.content
+        if content:
+            return content
     except Exception as e:
         print("Groq failed:", e)
 
@@ -182,14 +184,20 @@ def call_ai(messages, max_tokens=1200):
                 "model": "mistralai/mistral-7b-instruct",
                 "messages": messages,
                 "max_tokens": max_tokens
-            }
+            },
+            timeout=25
         )
+
         data = response.json()
-        return data["choices"][0]["message"]["content"]
+        print("OpenRouter response:", data)
+
+        return data.get("choices", [{}])[0].get("message", {}).get("content")
+
     except Exception as e:
         print("OpenRouter failed:", e)
-        raise Exception("All AI services failed")
-        
+
+    raise Exception("All AI services failed")
+
 def s_two_col(prs, d, T, num):
     sl = prs.slides.add_slide(prs.slide_layouts[6])
     set_bg(sl, T['light'])

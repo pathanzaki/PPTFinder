@@ -11,7 +11,7 @@ app = Flask(__name__)
 
 
 # ── PUT YOUR GROQ API KEY HERE ──────────────────────────
-API_KEY = os.environ.get("API_KEY")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 # ────────────────────────────────────────────────────────
 
 SITES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "generated_sites")

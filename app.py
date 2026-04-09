@@ -561,17 +561,10 @@ RULES:
   Slides 2-{num_slides-1} → "content" (exactly {cc} slides, each covering a DIFFERENT subtopic)
   Return ONLY the raw JSON array."""
 
-    client = Groq(api_key=GROQ_API_KEY)
-    resp = client.chat.completions.create(
-        model="llama-3.1-8b-instant",
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user",   "content": f"Create a {num_slides}-slide presentation: {prompt}"}
-        ],
-        temperature=0.58,
-        max_tokens=2000,
-    )
-    raw = resp.choices[0].message.content.strip()
+    raw = call_ai([
+    {"role": "system", "content": system},
+    {"role": "user", "content": f"Create a {num_slides}-slide presentation: {prompt}"}
+    ])
     # Strip markdown fences
     if "```" in raw:
         raw = raw.split("```")[1]
@@ -638,18 +631,10 @@ COLOR: warm palette for food/lifestyle, cool/blue for tech, green for eco/health
 Return ONLY the JSON object. No markdown outside it."""
 
 def gen_website(prompt):
-    client = Groq(api_key=GROQ_API_KEY)
-    resp = client.chat.completions.create(
-        model="llama-3.1-8b-instant",
-        messages=[
-            {"role": "system", "content": WEBSITE_PROMPT},
-            {"role": "user",   "content": f"Build a complete website for: {prompt}"}
-        ],
-        temperature=0.68,
-        max_tokens=2000,
-    )
-    raw = resp.choices[0].message.content.strip()
-    # Strip fences
+    raw = call_ai([
+    {"role": "system", "content": WEBSITE_PROMPT},
+    {"role": "user", "content": f"Build a complete website for: {prompt}"}
+    ])
     if "```" in raw:
         for part in raw.split("```"):
             part = part.strip()

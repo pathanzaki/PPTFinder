@@ -535,7 +535,7 @@ RULES:
             {"role": "user",   "content": f"Create a {num_slides}-slide presentation: {prompt}"}
         ],
         temperature=0.58,
-        max_tokens=8000,
+        max_tokens=2000,
     )
     raw = resp.choices[0].message.content.strip()
     # Strip markdown fences
@@ -612,7 +612,7 @@ def gen_website(prompt):
             {"role": "user",   "content": f"Build a complete website for: {prompt}"}
         ],
         temperature=0.68,
-        max_tokens=8000,
+        max_tokens=2000,
     )
     raw = resp.choices[0].message.content.strip()
     # Strip fences

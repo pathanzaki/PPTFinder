@@ -11,6 +11,7 @@ app = Flask(__name__)
 
 
 # ── PUT YOUR GROQ API KEY HERE ──────────────────────────
+GROQ_API_KEY = os.getenv("API_KEY")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 # ────────────────────────────────────────────────────────
 
@@ -155,7 +156,41 @@ def s_title(prs, d, T):
        "PPTFinders AI  |  pptfinders.com",
        10, italic=True, color=C(0xFF, 0xFF, 0xFF))
 
+def call_ai(messages, max_tokens=1200):
+    # 1️⃣ Try Groq first
+    try:
+        client = Groq(api_key=GROQ_API_KEY)
+        resp = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=messages,
+            max_tokens=max_tokens,
+            temperature=0.5
+        )
+        return resp.choices[0].message.content
 
+    except Exception as e:
+        print("Groq failed, switching to OpenRouter...", str(e))
+
+    # 2️⃣ Fallback → OpenRouter
+    try:
+        response = requests.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "model": "mistralai/mistral-7b-instruct",
+                "messages": messages,
+                "max_tokens": max_tokens
+            }
+        )
+        data = response.json()
+        return data["choices"][0]["message"]["content"]
+
+    except Exception as e:
+        print("OpenRouter also failed:", str(e))
+        raise Exception("All AI services failed")
 def s_two_col(prs, d, T, num):
     sl = prs.slides.add_slide(prs.slide_layouts[6])
     set_bg(sl, T['light'])

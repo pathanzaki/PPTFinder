@@ -525,48 +525,26 @@ def clean_json(raw):
 # ── Groq PPT content ─────────────────────────────────────
 def gen_ppt_content(prompt, num_slides):
     num_slides = max(5, min(30, int(num_slides)))
-    cc = num_slides - 2
-    system = f"""You are a world-class presentation writer and subject-matter expert.
-Return ONLY a raw JSON array of exactly {num_slides} slide objects. No markdown, no backticks, no commentary.
-
-Each object MUST have ALL 4 fields:
-  "title"       : punchy specific title, max 9 words
-  "slide_type"  : "title" | "content" | "conclusion"
-  "explanation" : EXACTLY 4-5 full sentences of expert-level content:
-                  • Sentence 1: clear definition / context
-                  • Sentences 2-3: specific facts, statistics, real examples, mechanisms
-                  • Sentence 4-5: implications, applications, or future outlook
-                  Write like a Forbes article or university textbook. NO vague generalities.
-  "bullets"     : list of EXACTLY 5 strings, each 10-18 words, specific and factual.
-                  Include numbers/percentages where relevant. Not vague one-liners.
-
-RULES:
-  Slide 1 → "title", Slide {num_slides} → "conclusion"
-  Slides 2-{num_slides-1} → "content" (exactly {cc} slides, each covering a DIFFERENT subtopic)
-  Return ONLY the raw JSON array."""
-
+    
     client = Groq(api_key=API_KEY)
     resp = client.chat.completions.create(
         model="llama-3.1-8b-instant",
         messages=[
-            {"role": "system", "content": system},
-            {"role": "user",   "content": f"Create a {num_slides}-slide presentation: {prompt}"}
+            {"role": "system", "content": "your system prompt"},
+            {"role": "user", "content": prompt}
         ],
-        temperature=0.58,
-        max_tokens=5000,
     )
+
     raw = resp.choices[0].message.content.strip()
     raw = clean_json(raw)
 
-try:
-    slides = json.loads(raw)
-except Exception as e:
-    print("RAW RESPONSE:\n", raw)
-    raise ValueError("Invalid JSON from AI")
-    if slides:
-        slides[0]["slide_type"]  = "title"
-        slides[-1]["slide_type"] = "conclusion"
-    return slides
+    try:
+        slides = json.loads(raw)
+    except Exception as e:
+        print("RAW:", raw)
+        raise ValueError("Invalid JSON")
+
+    return slides   ✅ (inside function)
 
 
 # ── Groq Website generation ───────────────────────────────

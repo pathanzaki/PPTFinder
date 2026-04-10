@@ -575,7 +575,7 @@ Rules:
             {"role": "user",   "content": user},
         ],
         temperature=0.55,
-        max_tokens=8000,
+        max_tokens=4000,
         response_format={"type": "json_object"},   # force JSON mode
     )
     raw = resp.choices[0].message.content.strip()
@@ -667,7 +667,7 @@ def gen_website(prompt):
             {"role": "user",   "content": f"Build a complete website for: {prompt}"}
         ],
         temperature=0.68,
-        max_tokens=8000,
+        max_tokens=4000,
     )
     raw = resp.choices[0].message.content.strip()
 

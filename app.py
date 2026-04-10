@@ -5,12 +5,11 @@ from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
 import json, io, os, re, uuid
-import requests
 
 app = Flask(__name__)
 
 # ── PUT YOUR GROQ API KEY HERE ──────────────────────────
-API_KEY = os.environ.get("GROQ_API_KEY")
+API_KEY = "YOUR_GROQ_API_KEY_HERE"
 # ────────────────────────────────────────────────────────
 
 SITES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "generated_sites")
@@ -502,49 +501,109 @@ def build_pptx(slides, topic):
     buf.seek(0)
     return buf.read()
 
-def clean_json(raw):
-    # Remove markdown
-    if "```" in raw:
-        parts = raw.split("```")
-        for p in parts:
-            p = p.strip()
-            if p.startswith("json"):
-                p = p[4:]
-            if p.startswith("["):
-                raw = p
-                break
 
-    # Extract JSON array
-    start = raw.find("[")
-    end = raw.rfind("]") + 1
+# ── Robust JSON extractor (handles markdown/prose pollution) ─
+def extract_json_array(raw: str):
+    """
+    Pull the first valid JSON array out of raw text, even if the model
+    wrapped it in markdown, prose, or extra commentary.
+    Strategy:
+      1. If the text contains ``` fences, grab what's inside.
+      2. Find the first '[' … last ']' span and try to parse that.
+      3. Raise ValueError if nothing valid is found.
+    """
+    text = raw.strip()
 
+    # Step 1 — strip markdown fences
+    if "```" in text:
+        parts = text.split("```")
+        # parts[1] is the fenced block (index 1, 3, 5 …)
+        for i in range(1, len(parts), 2):
+            candidate = parts[i].strip()
+            if candidate.lower().startswith("json"):
+                candidate = candidate[4:].strip()
+            if candidate.startswith("["):
+                try:
+                    return json.loads(candidate)
+                except json.JSONDecodeError:
+                    pass
+
+    # Step 2 — find first '[' … last ']'
+    start = text.find("[")
+    end   = text.rfind("]")
     if start != -1 and end > start:
-        raw = raw[start:end]
+        try:
+            return json.loads(text[start:end + 1])
+        except json.JSONDecodeError:
+            pass
 
-    return raw.strip()
+    raise ValueError(f"No valid JSON array found in AI response.\nFirst 300 chars: {raw[:300]}")
+
+
 # ── Groq PPT content ─────────────────────────────────────
 def gen_ppt_content(prompt, num_slides):
     num_slides = max(5, min(30, int(num_slides)))
-    
-    client = Groq(api_key=API_KEY)
-    resp = client.chat.completions.create(
-        model="llama-3.1-8b-instant",
-        messages=[
-            {"role": "system", "content": "your system prompt"},
-            {"role": "user", "content": prompt}
-        ],
+    cc = num_slides - 2
+
+    # Two-message approach: system sets strict JSON-only mode,
+    # user message is the actual request.
+    system = (
+        "You are a JSON API. You output ONLY raw JSON — no prose, no markdown, "
+        "no backticks, no headers, no explanations. Every response must start "
+        "with '[' and end with ']'."
     )
+    user = f"""Return a JSON array of exactly {num_slides} slide objects for a presentation about: {prompt}
 
+Each object must have:
+  "title"      : punchy title, max 9 words
+  "slide_type" : "title" (slide 1 only) | "content" | "conclusion" (last slide only)
+  "explanation": 4-5 full expert sentences with specific facts and statistics
+  "bullets"    : array of exactly 5 strings, each 10-18 words, factual with numbers
+
+Rules:
+  - Slide 1 is "title", slide {num_slides} is "conclusion", slides 2-{num_slides-1} are "content"
+  - Each content slide covers a DIFFERENT subtopic
+  - Output starts with [ and ends with ] — nothing else"""
+
+    client = Groq(api_key=API_KEY)
+
+    # First attempt: strict JSON mode
+    resp = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user",   "content": user},
+        ],
+        temperature=0.55,
+        max_tokens=8000,
+        response_format={"type": "json_object"},   # force JSON mode
+    )
     raw = resp.choices[0].message.content.strip()
-    raw = clean_json(raw)
 
+    # json_object mode returns a dict — unwrap if needed
     try:
-        slides = json.loads(raw)
-    except Exception as e:
-        print("RAW:", raw)
-        raise ValueError("Invalid JSON")
+        parsed = json.loads(raw)
+        if isinstance(parsed, dict):
+            # model wrapped array in an object — find the array value
+            for v in parsed.values():
+                if isinstance(v, list):
+                    slides = v
+                    break
+            else:
+                raise ValueError("No list found in JSON object response")
+        else:
+            slides = parsed
+    except (json.JSONDecodeError, ValueError):
+        # Fallback: try to extract array from raw text
+        slides = extract_json_array(raw)
 
-    return slides   
+    if not isinstance(slides, list) or len(slides) == 0:
+        raise ValueError("AI returned empty or invalid slide list")
+
+    # Guarantee first/last slide types
+    slides[0]["slide_type"]  = "title"
+    slides[-1]["slide_type"] = "conclusion"
+    return slides
 
 
 # ── Groq Website generation ───────────────────────────────
@@ -602,28 +661,33 @@ Return ONLY the JSON object. No markdown outside it."""
 def gen_website(prompt):
     client = Groq(api_key=API_KEY)
     resp = client.chat.completions.create(
-        model="llama-3.1-8b-instant",
+        model="llama-3.3-70b-versatile",
         messages=[
             {"role": "system", "content": WEBSITE_PROMPT},
             {"role": "user",   "content": f"Build a complete website for: {prompt}"}
         ],
         temperature=0.68,
-        max_tokens=5000,
+        max_tokens=8000,
     )
     raw = resp.choices[0].message.content.strip()
-    # Strip fences
+
+    # Robustly strip markdown fences
     if "```" in raw:
-        for part in raw.split("```"):
-            part = part.strip()
-            if part.startswith("json"):
-                part = part[4:].strip()
-            if part.startswith("{"):
-                raw = part
+        parts = raw.split("```")
+        for i in range(1, len(parts), 2):
+            candidate = parts[i].strip()
+            if candidate.lower().startswith("json"):
+                candidate = candidate[4:].strip()
+            if candidate.startswith("{"):
+                raw = candidate
                 break
+
+    # Find outermost { ... }
     s = raw.find("{")
     e = raw.rfind("}") + 1
     if s != -1 and e > s:
         raw = raw[s:e]
+
     return json.loads(raw)
 
 
@@ -654,8 +718,8 @@ def generate_ppt():
             as_attachment=True,
             download_name=fname,
         )
-    except json.JSONDecodeError:
-        return jsonify({"error": "AI returned bad JSON. Try again."}), 500
+    except (json.JSONDecodeError, ValueError) as exc:
+        return jsonify({"error": f"Content generation failed: {exc}. Please try again."}), 500
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
@@ -688,8 +752,8 @@ def generate_website():
             "description": result.get("description", ""),
             "filename":    filename,
         })
-    except json.JSONDecodeError:
-        return jsonify({"error": "AI returned bad JSON. Try again."}), 500
+    except (json.JSONDecodeError, ValueError) as exc:
+        return jsonify({"error": f"Website generation failed: {exc}. Please try again."}), 500
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 

@@ -502,7 +502,26 @@ def build_pptx(slides, topic):
     buf.seek(0)
     return buf.read()
 
+def clean_json(raw):
+    # Remove markdown
+    if "```" in raw:
+        parts = raw.split("```")
+        for p in parts:
+            p = p.strip()
+            if p.startswith("json"):
+                p = p[4:]
+            if p.startswith("["):
+                raw = p
+                break
 
+    # Extract JSON array
+    start = raw.find("[")
+    end = raw.rfind("]") + 1
+
+    if start != -1 and end > start:
+        raw = raw[start:end]
+
+    return raw.strip()
 # ── Groq PPT content ─────────────────────────────────────
 def gen_ppt_content(prompt, num_slides):
     num_slides = max(5, min(30, int(num_slides)))
@@ -537,13 +556,13 @@ RULES:
         max_tokens=5000,
     )
     raw = resp.choices[0].message.content.strip()
-    # Strip markdown fences
-    if "```" in raw:
-        raw = raw.split("```")[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-    raw = raw.strip()
+    raw = clean_json(raw)
+
+try:
     slides = json.loads(raw)
+except Exception as e:
+    print("RAW RESPONSE:\n", raw)
+    raise ValueError("Invalid JSON from AI")
     if slides:
         slides[0]["slide_type"]  = "title"
         slides[-1]["slide_type"] = "conclusion"

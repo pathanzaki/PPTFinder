@@ -544,7 +544,7 @@ def gen_ppt_content(prompt, num_slides):
         print("RAW:", raw)
         raise ValueError("Invalid JSON")
 
-    return slides   ✅ (inside function)
+    return slides   
 
 
 # ── Groq Website generation ───────────────────────────────

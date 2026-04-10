@@ -8,8 +8,8 @@ import json, io, os, re, uuid
 
 app = Flask(__name__)
 
-# ── PUT YOUR GROQ API KEY HERE ──────────────────────────
-API_KEY = os.environ.get("GROQ_API_KEY")
+# ── Reads from Render environment variable (or .env locally) ─
+API_KEY = os.environ.get("GROQ_API_KEY", "")
 # ────────────────────────────────────────────────────────
 
 SITES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "generated_sites")
@@ -575,7 +575,7 @@ Rules:
             {"role": "user",   "content": user},
         ],
         temperature=0.55,
-        max_tokens=4000,
+        max_tokens=5000,
         response_format={"type": "json_object"},   # force JSON mode
     )
     raw = resp.choices[0].message.content.strip()
@@ -607,88 +607,107 @@ Rules:
 
 
 # ── Groq Website generation ───────────────────────────────
-WEBSITE_PROMPT = """You are a senior full-stack developer and award-winning UI/UX designer.
-Generate a COMPLETE, STUNNING, fully-responsive single-page website.
+# ── Website generation (HTML-direct approach — NO JSON wrapping) ──
+# Asking the model for raw HTML avoids all \escape / json.loads issues.
 
-Return ONLY valid JSON (no markdown):
-{"site_title": "...", "description": "...", "html": "...complete HTML string..."}
+WEBSITE_SYSTEM = """You are a senior full-stack developer and award-winning UI/UX designer.
+Output ONLY a complete HTML file — nothing else. No JSON. No markdown. No explanation.
+Start your response with <!DOCTYPE html> and end with </html>.
 
-THE HTML MUST INCLUDE ALL OF THESE:
+THE HTML FILE MUST INCLUDE:
 
-SECTIONS:
-1. Sticky NAVBAR — logo, 5 links, CTA button, working mobile hamburger
-2. HERO — full viewport, animated gradient headline, subtext, 2 CTA buttons, decorative CSS shapes
-3. ABOUT — 2-column (text + stats grid: 4 big numbers)
-4. SERVICES/FEATURES — 6-card grid with emoji icons, titles, descriptions, hover lift
-5. STATS — dark-band section with 4 animated count-up counters
-6. TESTIMONIALS — 3 glassmorphism cards with quote, name, role, CSS star rating
-7. FAQ — 5 Q&A items with smooth accordion (JS max-height animation)
-8. CONTACT — form (name, email, message, submit) + success state
-9. FOOTER — 3 columns (logo+desc, links, contact), social icons, copyright
+SECTIONS (all required):
+1. Sticky NAVBAR — logo text, 5 nav links, CTA button, mobile hamburger (works via JS)
+2. HERO — full-viewport, animated gradient background, large headline with gradient text,
+         subheadline, 2 CTA buttons, decorative floating CSS shapes
+3. ABOUT — 2-column: left text paragraphs, right grid of 4 big stat numbers + labels
+4. SERVICES — 6-card CSS grid, each card has emoji icon, bold title, description, hover lift effect
+5. STATS BAND — dark full-width section, 4 large animated count-up numbers with labels
+6. TESTIMONIALS — 3 cards with glassmorphism effect, star rating (CSS), quote, name, role
+7. FAQ — 5 items with smooth accordion (JS toggles max-height, not display)
+8. CONTACT — form with name, email, message fields, submit button, success message on submit
+9. FOOTER — 3 columns: logo+description, quick links, contact info. Dark background. Copyright.
 
-CSS REQUIREMENTS (inside <style>):
-  - :root variables for all colors (theme must match topic)
-  - Google Fonts: 2 fonts (link in <head>)
-  - Mobile-first, breakpoints at 768px and 1100px
-  - Animated hero gradient background (@keyframes)
-  - Hero headline: gradient text (background-clip:text)
-  - Card hover: translateY(-8px) + shadow deepens
-  - Glassmorphism: backdrop-filter:blur(12px) + semi-transparent bg
-  - Custom scrollbar (webkit)
-  - .reveal class: opacity:0 translateY(25px) → visible: opacity:1 translateY(0)
-  - Consistent spacing scale (8/16/24/32/48/64/96px)
-  - Button: gradient bg, border-radius:50px, hover scale(1.04)
+CSS (inside one <style> tag in <head>):
+- CSS :root variables for all colors, fonts, spacing
+- Google Fonts: import 2 complementary fonts matching the topic mood
+- Color theme that FITS the topic (warm orange/red for food, cool blue for tech,
+  forest green for nature, deep green for finance, violet for creative, etc.)
+- Mobile-first layout, @media breakpoints at 768px and 1100px
+- Hero: animated gradient background with @keyframes, gradient clip text on headline
+- Cards: hover → translateY(-10px) + deeper box-shadow (transition 0.3s ease)
+- Buttons: gradient background, border-radius 50px, hover scale(1.05)
+- Glassmorphism cards: background rgba + backdrop-filter blur(14px)
+- .reveal { opacity:0; transform:translateY(30px); transition:0.7s ease; }
+  .reveal.visible { opacity:1; transform:translateY(0); }
+- Custom webkit scrollbar
+- Consistent 8px spacing scale (16/24/32/48/64/96px sections)
+- Hamburger: 3 lines that animate to X on toggle
 
-JAVASCRIPT (inside <script>, NO external libs):
-  - Hamburger toggle with X animation
-  - Navbar shrink + shadow after 80px scroll
-  - Smooth scroll on all anchor links
-  - IntersectionObserver → add .visible to .reveal elements
-  - Count-up animation on stats (0 → target, triggered by observer)
-  - FAQ accordion using max-height toggle
-  - Active nav link highlighting by scroll position
-  - Form submit: preventDefault, validate, show success message
+JAVASCRIPT (one <script> tag before </body>, no external libraries):
+- Mobile hamburger menu toggle + body scroll lock
+- Navbar: add class .scrolled after 80px scroll (adds shadow + shrinks padding)
+- Smooth scroll for all internal anchor links
+- IntersectionObserver: adds .visible to all .reveal elements when in viewport
+- Count-up animation for stats section numbers (triggered by IntersectionObserver)
+- FAQ accordion: clicking a question toggles max-height of its answer smoothly
+- Active nav link: highlight based on which section is currently in view
+- Contact form: preventDefault, basic validation, hide form and show success message
 
-CONTENT:
-  - All text must be specific to the topic in the prompt
-  - Real business name from prompt, industry-specific copy
-  - Realistic stats, testimonial names, FAQ questions
+CONTENT RULES:
+- Extract the business name and type from the user prompt
+- Write ALL content specific to that business — services, stats, testimonials, FAQ must match
+- Use realistic numbers, real-sounding testimonial names, industry-specific FAQ questions
+- Professional marketing copy, no placeholder text, no lorem ipsum
 
-COLOR: warm palette for food/lifestyle, cool/blue for tech, green for eco/health, etc.
+Output ONLY the HTML file. Begin with <!DOCTYPE html>."""
 
-Return ONLY the JSON object. No markdown outside it."""
 
 def gen_website(prompt):
+    """Call Groq asking for raw HTML — completely bypasses JSON escape issues."""
     client = Groq(api_key=API_KEY)
+
+    # Two-call strategy:
+    # Call 1 — get the HTML directly (no JSON)
     resp = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[
-            {"role": "system", "content": WEBSITE_PROMPT},
-            {"role": "user",   "content": f"Build a complete website for: {prompt}"}
+            {"role": "system", "content": WEBSITE_SYSTEM},
+            {"role": "user",   "content": f"Build a complete professional website for: {prompt}"}
         ],
-        temperature=0.68,
-        max_tokens=4000,
+        temperature=0.65,
+        max_tokens=5000,
     )
     raw = resp.choices[0].message.content.strip()
 
-    # Robustly strip markdown fences
-    if "```" in raw:
-        parts = raw.split("```")
-        for i in range(1, len(parts), 2):
-            candidate = parts[i].strip()
-            if candidate.lower().startswith("json"):
-                candidate = candidate[4:].strip()
-            if candidate.startswith("{"):
-                raw = candidate
-                break
+    # Strip accidental markdown fences
+    if raw.startswith("```"):
+        lines = raw.split("\n")
+        # drop first line (```html or ```) and last line (```)
+        if lines[-1].strip() == "```":
+            lines = lines[1:-1]
+        else:
+            lines = lines[1:]
+        raw = "\n".join(lines).strip()
 
-    # Find outermost { ... }
-    s = raw.find("{")
-    e = raw.rfind("}") + 1
-    if s != -1 and e > s:
-        raw = raw[s:e]
+    # Ensure it starts with DOCTYPE
+    if not raw.lower().startswith("<!doctype"):
+        idx = raw.lower().find("<!doctype")
+        if idx != -1:
+            raw = raw[idx:]
 
-    return json.loads(raw)
+    if len(raw) < 200 or "<html" not in raw.lower():
+        raise ValueError("AI did not return valid HTML. Please try again.")
+
+    # Derive a title from the prompt for the response metadata
+    words      = prompt.replace(",", " ").split()
+    site_title = " ".join(w.capitalize() for w in words[:5])
+
+    return {
+        "html":        raw,
+        "site_title":  site_title,
+        "description": f"A complete website for {prompt}",
+    }
 
 
 # ── Flask routes ──────────────────────────────────────────

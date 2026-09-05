@@ -604,30 +604,71 @@ Return ONLY the JSON object. No markdown outside it."""
 
 def gen_website(prompt):
     client = Groq(api_key=GROQ_API_KEY)
+
     resp = client.chat.completions.create(
         model="openai/gpt-oss-20b",
         messages=[
-            {"role": "system", "content": WEBSITE_PROMPT},
-            {"role": "user",   "content": f"Build a complete website for: {prompt}"}
+            {
+                "role": "system",
+                "content": WEBSITE_PROMPT + """
+
+IMPORTANT:
+Return ONLY a valid JSON object.
+Do NOT use markdown code fences.
+Do NOT write ```json.
+Do NOT add any explanation outside the JSON.
+
+The JSON must contain:
+{
+    "title": "Website title",
+    "description": "Short website description",
+    "html": "Complete HTML code"
+}
+
+The HTML must be complete and ready to render in a browser.
+"""
+            },
+            {
+                "role": "user",
+                "content": f"Build a complete website for: {prompt}"
+            }
         ],
-        temperature=0.68,
-        max_tokens=2000,
+        temperature=0.4,
+        max_completion_tokens=12000,
+        response_format={"type": "json_object"}
     )
+
     raw = resp.choices[0].message.content.strip()
-    # Strip fences
+
+    # Remove markdown fences if the model still adds them
     if "```" in raw:
-        for part in raw.split("```"):
+        parts = raw.split("```")
+
+        for part in parts:
             part = part.strip()
+
             if part.startswith("json"):
                 part = part[4:].strip()
+
             if part.startswith("{"):
                 raw = part
                 break
-    s = raw.find("{")
-    e = raw.rfind("}") + 1
-    if s != -1 and e > s:
-        raw = raw[s:e]
-    return json.loads(raw)
+
+    # Extract JSON object
+    start = raw.find("{")
+    end = raw.rfind("}") + 1
+
+    if start == -1 or end <= start:
+        raise ValueError("AI did not return valid JSON")
+
+    raw = raw[start:end]
+
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as e:
+        print("❌ Website JSON Error:", e)
+        print("❌ AI Response:", raw[:3000])
+        raise ValueError("AI returned invalid JSON")
 
 
 # ── Flask routes ──────────────────────────────────────────

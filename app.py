@@ -5,11 +5,12 @@ from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
 import json, io, os, re, uuid
+import requests
 
 app = Flask(__name__)
 
-# ── Reads from Render environment variable (or .env locally) ─
-API_KEY = os.environ.get("GROQ_API_KEY", "")
+# ── PUT YOUR GROQ API KEY HERE ──────────────────────────
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 # ────────────────────────────────────────────────────────
 
 SITES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "generated_sites")
@@ -502,212 +503,131 @@ def build_pptx(slides, topic):
     return buf.read()
 
 
-# ── Robust JSON extractor (handles markdown/prose pollution) ─
-def extract_json_array(raw: str):
-    """
-    Pull the first valid JSON array out of raw text, even if the model
-    wrapped it in markdown, prose, or extra commentary.
-    Strategy:
-      1. If the text contains ``` fences, grab what's inside.
-      2. Find the first '[' … last ']' span and try to parse that.
-      3. Raise ValueError if nothing valid is found.
-    """
-    text = raw.strip()
-
-    # Step 1 — strip markdown fences
-    if "```" in text:
-        parts = text.split("```")
-        # parts[1] is the fenced block (index 1, 3, 5 …)
-        for i in range(1, len(parts), 2):
-            candidate = parts[i].strip()
-            if candidate.lower().startswith("json"):
-                candidate = candidate[4:].strip()
-            if candidate.startswith("["):
-                try:
-                    return json.loads(candidate)
-                except json.JSONDecodeError:
-                    pass
-
-    # Step 2 — find first '[' … last ']'
-    start = text.find("[")
-    end   = text.rfind("]")
-    if start != -1 and end > start:
-        try:
-            return json.loads(text[start:end + 1])
-        except json.JSONDecodeError:
-            pass
-
-    raise ValueError(f"No valid JSON array found in AI response.\nFirst 300 chars: {raw[:300]}")
-
-
 # ── Groq PPT content ─────────────────────────────────────
 def gen_ppt_content(prompt, num_slides):
     num_slides = max(5, min(30, int(num_slides)))
     cc = num_slides - 2
+    system = f"""You are a world-class presentation writer and subject-matter expert.
+Return ONLY a raw JSON array of exactly {num_slides} slide objects. No markdown, no backticks, no commentary.
 
-    # Two-message approach: system sets strict JSON-only mode,
-    # user message is the actual request.
-    system = (
-        "You are a JSON API. You output ONLY raw JSON — no prose, no markdown, "
-        "no backticks, no headers, no explanations. Every response must start "
-        "with '[' and end with ']'."
-    )
-    user = f"""Return a JSON array of exactly {num_slides} slide objects for a presentation about: {prompt}
+Each object MUST have ALL 4 fields:
+  "title"       : punchy specific title, max 9 words
+  "slide_type"  : "title" | "content" | "conclusion"
+  "explanation" : EXACTLY 4-5 full sentences of expert-level content:
+                  • Sentence 1: clear definition / context
+                  • Sentences 2-3: specific facts, statistics, real examples, mechanisms
+                  • Sentence 4-5: implications, applications, or future outlook
+                  Write like a Forbes article or university textbook. NO vague generalities.
+  "bullets"     : list of EXACTLY 5 strings, each 10-18 words, specific and factual.
+                  Include numbers/percentages where relevant. Not vague one-liners.
 
-Each object must have:
-  "title"      : punchy title, max 9 words
-  "slide_type" : "title" (slide 1 only) | "content" | "conclusion" (last slide only)
-  "explanation": 4-5 full expert sentences with specific facts and statistics
-  "bullets"    : array of exactly 5 strings, each 10-18 words, factual with numbers
+RULES:
+  Slide 1 → "title", Slide {num_slides} → "conclusion"
+  Slides 2-{num_slides-1} → "content" (exactly {cc} slides, each covering a DIFFERENT subtopic)
+  Return ONLY the raw JSON array."""
 
-Rules:
-  - Slide 1 is "title", slide {num_slides} is "conclusion", slides 2-{num_slides-1} are "content"
-  - Each content slide covers a DIFFERENT subtopic
-  - Output starts with [ and ends with ] — nothing else"""
-
-    client = Groq(api_key=API_KEY)
-
-    # First attempt: strict JSON mode
+    client = Groq(api_key=GROQ_API_KEY)
     resp = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
+        model="openai/gpt-oss-20b",
         messages=[
             {"role": "system", "content": system},
-            {"role": "user",   "content": user},
+            {"role": "user",   "content": f"Create a {num_slides}-slide presentation: {prompt}"}
         ],
-        temperature=0.55,
-        max_tokens=5000,
-        response_format={"type": "json_object"},   # force JSON mode
+        temperature=0.58,
+        max_tokens=12000,
     )
     raw = resp.choices[0].message.content.strip()
-
-    # json_object mode returns a dict — unwrap if needed
-    try:
-        parsed = json.loads(raw)
-        if isinstance(parsed, dict):
-            # model wrapped array in an object — find the array value
-            for v in parsed.values():
-                if isinstance(v, list):
-                    slides = v
-                    break
-            else:
-                raise ValueError("No list found in JSON object response")
-        else:
-            slides = parsed
-    except (json.JSONDecodeError, ValueError):
-        # Fallback: try to extract array from raw text
-        slides = extract_json_array(raw)
-
-    if not isinstance(slides, list) or len(slides) == 0:
-        raise ValueError("AI returned empty or invalid slide list")
-
-    # Guarantee first/last slide types
-    slides[0]["slide_type"]  = "title"
-    slides[-1]["slide_type"] = "conclusion"
+    # Strip markdown fences
+    if "```" in raw:
+        raw = raw.split("```")[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+    raw = raw.strip()
+    slides = json.loads(raw)
+    if slides:
+        slides[0]["slide_type"]  = "title"
+        slides[-1]["slide_type"] = "conclusion"
     return slides
 
 
 # ── Groq Website generation ───────────────────────────────
-# ── Website generation (HTML-direct approach — NO JSON wrapping) ──
-# Asking the model for raw HTML avoids all \escape / json.loads issues.
+WEBSITE_PROMPT = """You are a senior full-stack developer and award-winning UI/UX designer.
+Generate a COMPLETE, STUNNING, fully-responsive single-page website.
 
-WEBSITE_SYSTEM = """You are a senior full-stack developer and award-winning UI/UX designer.
-Output ONLY a complete HTML file — nothing else. No JSON. No markdown. No explanation.
-Start your response with <!DOCTYPE html> and end with </html>.
+Return ONLY valid JSON (no markdown):
+{"site_title": "...", "description": "...", "html": "...complete HTML string..."}
 
-THE HTML FILE MUST INCLUDE:
+THE HTML MUST INCLUDE ALL OF THESE:
 
-SECTIONS (all required):
-1. Sticky NAVBAR — logo text, 5 nav links, CTA button, mobile hamburger (works via JS)
-2. HERO — full-viewport, animated gradient background, large headline with gradient text,
-         subheadline, 2 CTA buttons, decorative floating CSS shapes
-3. ABOUT — 2-column: left text paragraphs, right grid of 4 big stat numbers + labels
-4. SERVICES — 6-card CSS grid, each card has emoji icon, bold title, description, hover lift effect
-5. STATS BAND — dark full-width section, 4 large animated count-up numbers with labels
-6. TESTIMONIALS — 3 cards with glassmorphism effect, star rating (CSS), quote, name, role
-7. FAQ — 5 items with smooth accordion (JS toggles max-height, not display)
-8. CONTACT — form with name, email, message fields, submit button, success message on submit
-9. FOOTER — 3 columns: logo+description, quick links, contact info. Dark background. Copyright.
+SECTIONS:
+1. Sticky NAVBAR — logo, 5 links, CTA button, working mobile hamburger
+2. HERO — full viewport, animated gradient headline, subtext, 2 CTA buttons, decorative CSS shapes
+3. ABOUT — 2-column (text + stats grid: 4 big numbers)
+4. SERVICES/FEATURES — 6-card grid with emoji icons, titles, descriptions, hover lift
+5. STATS — dark-band section with 4 animated count-up counters
+6. TESTIMONIALS — 3 glassmorphism cards with quote, name, role, CSS star rating
+7. FAQ — 5 Q&A items with smooth accordion (JS max-height animation)
+8. CONTACT — form (name, email, message, submit) + success state
+9. FOOTER — 3 columns (logo+desc, links, contact), social icons, copyright
 
-CSS (inside one <style> tag in <head>):
-- CSS :root variables for all colors, fonts, spacing
-- Google Fonts: import 2 complementary fonts matching the topic mood
-- Color theme that FITS the topic (warm orange/red for food, cool blue for tech,
-  forest green for nature, deep green for finance, violet for creative, etc.)
-- Mobile-first layout, @media breakpoints at 768px and 1100px
-- Hero: animated gradient background with @keyframes, gradient clip text on headline
-- Cards: hover → translateY(-10px) + deeper box-shadow (transition 0.3s ease)
-- Buttons: gradient background, border-radius 50px, hover scale(1.05)
-- Glassmorphism cards: background rgba + backdrop-filter blur(14px)
-- .reveal { opacity:0; transform:translateY(30px); transition:0.7s ease; }
-  .reveal.visible { opacity:1; transform:translateY(0); }
-- Custom webkit scrollbar
-- Consistent 8px spacing scale (16/24/32/48/64/96px sections)
-- Hamburger: 3 lines that animate to X on toggle
+CSS REQUIREMENTS (inside <style>):
+  - :root variables for all colors (theme must match topic)
+  - Google Fonts: 2 fonts (link in <head>)
+  - Mobile-first, breakpoints at 768px and 1100px
+  - Animated hero gradient background (@keyframes)
+  - Hero headline: gradient text (background-clip:text)
+  - Card hover: translateY(-8px) + shadow deepens
+  - Glassmorphism: backdrop-filter:blur(12px) + semi-transparent bg
+  - Custom scrollbar (webkit)
+  - .reveal class: opacity:0 translateY(25px) → visible: opacity:1 translateY(0)
+  - Consistent spacing scale (8/16/24/32/48/64/96px)
+  - Button: gradient bg, border-radius:50px, hover scale(1.04)
 
-JAVASCRIPT (one <script> tag before </body>, no external libraries):
-- Mobile hamburger menu toggle + body scroll lock
-- Navbar: add class .scrolled after 80px scroll (adds shadow + shrinks padding)
-- Smooth scroll for all internal anchor links
-- IntersectionObserver: adds .visible to all .reveal elements when in viewport
-- Count-up animation for stats section numbers (triggered by IntersectionObserver)
-- FAQ accordion: clicking a question toggles max-height of its answer smoothly
-- Active nav link: highlight based on which section is currently in view
-- Contact form: preventDefault, basic validation, hide form and show success message
+JAVASCRIPT (inside <script>, NO external libs):
+  - Hamburger toggle with X animation
+  - Navbar shrink + shadow after 80px scroll
+  - Smooth scroll on all anchor links
+  - IntersectionObserver → add .visible to .reveal elements
+  - Count-up animation on stats (0 → target, triggered by observer)
+  - FAQ accordion using max-height toggle
+  - Active nav link highlighting by scroll position
+  - Form submit: preventDefault, validate, show success message
 
-CONTENT RULES:
-- Extract the business name and type from the user prompt
-- Write ALL content specific to that business — services, stats, testimonials, FAQ must match
-- Use realistic numbers, real-sounding testimonial names, industry-specific FAQ questions
-- Professional marketing copy, no placeholder text, no lorem ipsum
+CONTENT:
+  - All text must be specific to the topic in the prompt
+  - Real business name from prompt, industry-specific copy
+  - Realistic stats, testimonial names, FAQ questions
 
-Output ONLY the HTML file. Begin with <!DOCTYPE html>."""
+COLOR: warm palette for food/lifestyle, cool/blue for tech, green for eco/health, etc.
 
+Return ONLY the JSON object. No markdown outside it."""
 
 def gen_website(prompt):
-    """Call Groq asking for raw HTML — completely bypasses JSON escape issues."""
-    client = Groq(api_key=API_KEY)
-
-    # Two-call strategy:
-    # Call 1 — get the HTML directly (no JSON)
+    client = Groq(api_key=GROQ_API_KEY)
     resp = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
+        model="openai/gpt-oss-20b",
         messages=[
-            {"role": "system", "content": WEBSITE_SYSTEM},
-            {"role": "user",   "content": f"Build a complete professional website for: {prompt}"}
+            {"role": "system", "content": WEBSITE_PROMPT},
+            {"role": "user",   "content": f"Build a complete website for: {prompt}"}
         ],
-        temperature=0.65,
-        max_tokens=5000,
+        temperature=0.68,
+        max_tokens=2000,
     )
     raw = resp.choices[0].message.content.strip()
-
-    # Strip accidental markdown fences
-    if raw.startswith("```"):
-        lines = raw.split("\n")
-        # drop first line (```html or ```) and last line (```)
-        if lines[-1].strip() == "```":
-            lines = lines[1:-1]
-        else:
-            lines = lines[1:]
-        raw = "\n".join(lines).strip()
-
-    # Ensure it starts with DOCTYPE
-    if not raw.lower().startswith("<!doctype"):
-        idx = raw.lower().find("<!doctype")
-        if idx != -1:
-            raw = raw[idx:]
-
-    if len(raw) < 200 or "<html" not in raw.lower():
-        raise ValueError("AI did not return valid HTML. Please try again.")
-
-    # Derive a title from the prompt for the response metadata
-    words      = prompt.replace(",", " ").split()
-    site_title = " ".join(w.capitalize() for w in words[:5])
-
-    return {
-        "html":        raw,
-        "site_title":  site_title,
-        "description": f"A complete website for {prompt}",
-    }
+    # Strip fences
+    if "```" in raw:
+        for part in raw.split("```"):
+            part = part.strip()
+            if part.startswith("json"):
+                part = part[4:].strip()
+            if part.startswith("{"):
+                raw = part
+                break
+    s = raw.find("{")
+    e = raw.rfind("}") + 1
+    if s != -1 and e > s:
+        raw = raw[s:e]
+    return json.loads(raw)
 
 
 # ── Flask routes ──────────────────────────────────────────
@@ -737,8 +657,8 @@ def generate_ppt():
             as_attachment=True,
             download_name=fname,
         )
-    except (json.JSONDecodeError, ValueError) as exc:
-        return jsonify({"error": f"Content generation failed: {exc}. Please try again."}), 500
+    except json.JSONDecodeError:
+        return jsonify({"error": "AI returned bad JSON. Try again."}), 500
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
@@ -771,8 +691,8 @@ def generate_website():
             "description": result.get("description", ""),
             "filename":    filename,
         })
-    except (json.JSONDecodeError, ValueError) as exc:
-        return jsonify({"error": f"Website generation failed: {exc}. Please try again."}), 500
+    except json.JSONDecodeError:
+        return jsonify({"error": "AI returned bad JSON. Try again."}), 500
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
@@ -788,5 +708,5 @@ def download_site(filename):
 
 
 if __name__ == "__main__":
-    print("\n✦ PPTFinders AI Studio → http://127.0.0.1:5000\n")
-    app.run(debug=True)
+    print("\n✦ PPTFinders AI Studio → http://127.0.0.1:5001\n")
+    app.run(host="127.0.0.1", port=5001, debug=True)

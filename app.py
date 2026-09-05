@@ -551,124 +551,418 @@ RULES:
 
 
 # ── Groq Website generation ───────────────────────────────
-WEBSITE_PROMPT = """You are a senior full-stack developer and award-winning UI/UX designer.
-Generate a COMPLETE, STUNNING, fully-responsive single-page website.
+WEBSITE_PROMPT = """
+You are a senior full-stack developer and award-winning UI/UX designer.
 
-Return ONLY valid JSON (no markdown):
-{"site_title": "...", "description": "...", "html": "...complete HTML string..."}
+Generate a COMPLETE, STUNNING, production-quality, fully responsive SINGLE-PAGE WEBSITE.
 
-THE HTML MUST INCLUDE ALL OF THESE:
+IMPORTANT:
+Return ONLY the complete HTML document.
 
-SECTIONS:
-1. Sticky NAVBAR — logo, 5 links, CTA button, working mobile hamburger
-2. HERO — full viewport, animated gradient headline, subtext, 2 CTA buttons, decorative CSS shapes
-3. ABOUT — 2-column (text + stats grid: 4 big numbers)
-4. SERVICES/FEATURES — 6-card grid with emoji icons, titles, descriptions, hover lift
-5. STATS — dark-band section with 4 animated count-up counters
-6. TESTIMONIALS — 3 glassmorphism cards with quote, name, role, CSS star rating
-7. FAQ — 5 Q&A items with smooth accordion (JS max-height animation)
-8. CONTACT — form (name, email, message, submit) + success state
-9. FOOTER — 3 columns (logo+desc, links, contact), social icons, copyright
+DO NOT return JSON.
+DO NOT return markdown.
+DO NOT use ```html.
+DO NOT use ``` code fences.
+DO NOT add explanations before or after the HTML.
 
-CSS REQUIREMENTS (inside <style>):
-  - :root variables for all colors (theme must match topic)
-  - Google Fonts: 2 fonts (link in <head>)
-  - Mobile-first, breakpoints at 768px and 1100px
-  - Animated hero gradient background (@keyframes)
-  - Hero headline: gradient text (background-clip:text)
-  - Card hover: translateY(-8px) + shadow deepens
-  - Glassmorphism: backdrop-filter:blur(12px) + semi-transparent bg
-  - Custom scrollbar (webkit)
-  - .reveal class: opacity:0 translateY(25px) → visible: opacity:1 translateY(0)
-  - Consistent spacing scale (8/16/24/32/48/64/96px)
-  - Button: gradient bg, border-radius:50px, hover scale(1.04)
+The response MUST start with:
+<!DOCTYPE html>
 
-JAVASCRIPT (inside <script>, NO external libs):
-  - Hamburger toggle with X animation
-  - Navbar shrink + shadow after 80px scroll
-  - Smooth scroll on all anchor links
-  - IntersectionObserver → add .visible to .reveal elements
-  - Count-up animation on stats (0 → target, triggered by observer)
-  - FAQ accordion using max-height toggle
-  - Active nav link highlighting by scroll position
-  - Form submit: preventDefault, validate, show success message
+The response MUST end with:
+</html>
 
-CONTENT:
-  - All text must be specific to the topic in the prompt
-  - Real business name from prompt, industry-specific copy
-  - Realistic stats, testimonial names, FAQ questions
+The website must be completely self-contained and ready to open directly in a browser.
 
-COLOR: warm palette for food/lifestyle, cool/blue for tech, green for eco/health, etc.
+==================================================
+SECTIONS
+==================================================
 
-Return ONLY the JSON object. No markdown outside it."""
+1. STICKY NAVBAR
+- Professional logo
+- 5 navigation links
+- CTA button
+- Working mobile hamburger menu
+- Hamburger transforms into X
+- Mobile navigation menu
+- Navbar shrinks after scrolling 80px
+- Navbar gets a shadow after scrolling
+
+2. HERO
+- Full viewport hero section
+- Animated gradient background
+- Large animated gradient headline
+- Topic-specific headline
+- Topic-specific subtext
+- Two CTA buttons
+- Decorative CSS shapes
+- Smooth entrance animations
+
+3. ABOUT
+- Two-column layout
+- Topic-specific description
+- Stats grid with 4 large numbers
+- Realistic numbers related to the business
+- Image or CSS visual if appropriate
+
+4. SERVICES / FEATURES
+- 6 cards
+- Emoji or CSS icons
+- Topic-specific titles
+- Topic-specific descriptions
+- Hover animation
+- Cards move upward on hover
+- Deep shadow on hover
+
+5. STATS
+- Dark contrasting section
+- 4 animated count-up counters
+- Counters start from 0
+- Counters animate when section becomes visible
+
+6. TESTIMONIALS
+- 3 glassmorphism testimonial cards
+- Realistic names
+- Realistic roles
+- Topic-specific testimonials
+- CSS star ratings
+
+7. FAQ
+- 5 realistic topic-specific questions
+- Accordion interface
+- Smooth max-height animation
+- JavaScript controlled
+
+8. CONTACT
+- Name field
+- Email field
+- Message field
+- Submit button
+- Client-side validation
+- Success message after submission
+- No backend required
+
+9. FOOTER
+- Logo
+- Description
+- Navigation links
+- Contact information
+- Social icons
+- Copyright
+- 3-column layout
+
+==================================================
+CSS REQUIREMENTS
+==================================================
+
+Put ALL CSS inside <style>.
+
+Use:
+
+:root {
+    /* all theme colors */
+}
+
+Requirements:
+
+- Theme colors must match the topic
+- Warm colors for food/lifestyle
+- Cool blue colors for technology
+- Green colors for eco/health
+- Premium modern color combinations
+- Google Fonts: use 2 fonts
+- Google Font links must be inside <head>
+- Mobile-first responsive design
+- Breakpoint at 768px
+- Breakpoint at 1100px
+- Animated hero gradient background using @keyframes
+- Hero headline must use gradient text
+- background-clip: text
+- Card hover:
+    transform: translateY(-8px)
+    deeper shadow
+- Glassmorphism:
+    backdrop-filter: blur(12px)
+    semi-transparent background
+- Custom WebKit scrollbar
+- .reveal animation:
+    opacity: 0
+    transform: translateY(25px)
+- .visible:
+    opacity: 1
+    transform: translateY(0)
+- Consistent spacing:
+    8px
+    16px
+    24px
+    32px
+    48px
+    64px
+    96px
+- Buttons use gradient backgrounds
+- Border-radius: 50px
+- Button hover scale: 1.04
+- Smooth transitions throughout
+- Good contrast
+- Professional typography
+- No horizontal overflow
+- Fully responsive on mobile, tablet and desktop
+
+==================================================
+JAVASCRIPT REQUIREMENTS
+==================================================
+
+Put ALL JavaScript inside <script>.
+
+DO NOT use external JavaScript libraries.
+
+Implement:
+
+1. Hamburger menu toggle
+
+2. Hamburger X animation
+
+3. Mobile menu open/close
+
+4. Navbar shrink after 80px scroll
+
+5. Navbar shadow after scrolling
+
+6. Smooth scrolling for all anchor links
+
+7. IntersectionObserver for .reveal elements
+
+8. Count-up animation for statistics
+
+9. FAQ accordion using max-height
+
+10. Active navigation link highlighting based on scroll position
+
+11. Contact form validation
+
+12. Contact form success message
+
+13. Close mobile menu after clicking navigation link
+
+==================================================
+CONTENT REQUIREMENTS
+==================================================
+
+The website content MUST be specifically based on the user's topic.
+
+Use:
+
+- Real business name from the prompt
+- Industry-specific content
+- Industry-specific services
+- Industry-specific headlines
+- Realistic statistics
+- Realistic testimonials
+- Relevant FAQ questions
+- Relevant CTA text
+- Professional marketing copy
+
+Do NOT use generic placeholders such as:
+
+"Lorem ipsum"
+"Your Company"
+"Company Name"
+"John Doe"
+"123 Main Street"
+
+Do not create unrelated content.
+
+If the user gives a real business name, use that exact business name throughout the website.
+
+==================================================
+DESIGN QUALITY
+==================================================
+
+The website should look like a premium modern website designed by a professional UI/UX designer.
+
+Use:
+
+- Modern spacing
+- Rounded cards
+- Soft shadows
+- Glass effects
+- Gradients
+- Smooth animations
+- Beautiful typography
+- Proper alignment
+- Responsive layouts
+- Professional buttons
+- Interactive elements
+
+The final HTML must work immediately when opened in a browser.
+
+==================================================
+FINAL OUTPUT
+==================================================
+
+Return ONLY the complete HTML document.
+
+Start with:
+
+<!DOCTYPE html>
+
+End with:
+
+</html>
+"""
+
 
 def gen_website(prompt):
     client = Groq(api_key=GROQ_API_KEY)
 
-    resp = client.chat.completions.create(
-        model="openai/gpt-oss-20b",
-        messages=[
-            {
-                "role": "system",
-                "content": WEBSITE_PROMPT + """
+    try:
+        resp = client.chat.completions.create(
+            model="openai/gpt-oss-20b",
+            messages=[
+                {
+                    "role": "system",
+                    "content": WEBSITE_PROMPT
+                },
+                {
+                    "role": "user",
+                    "content": f"""
+Build a complete professional website for this topic:
+
+{prompt}
 
 IMPORTANT:
-Return ONLY a valid JSON object.
-Do NOT use markdown code fences.
-Do NOT write ```json.
-Do NOT add any explanation outside the JSON.
+Return ONLY the complete HTML document.
 
-The JSON must contain:
-{
-    "title": "Website title",
-    "description": "Short website description",
-    "html": "Complete HTML code"
-}
+The HTML must:
+- Start with <!DOCTYPE html>
+- End with </html>
+- Contain <html>, <head>, <body>
+- Contain all CSS inside <style>
+- Contain all JavaScript inside <script>
+- Be fully responsive
+- Be visually impressive
+- Be specific to the provided topic
+- Be ready to render directly in a browser
 
-The HTML must be complete and ready to render in a browser.
+DO NOT return JSON.
+DO NOT use markdown.
+DO NOT use ```html.
+DO NOT add any explanation.
 """
-            },
-            {
-                "role": "user",
-                "content": f"Build a complete website for: {prompt}"
-            }
-        ],
-        temperature=0.4,
-        max_completion_tokens=12000,
-        response_format={"type": "json_object"}
-    )
+                }
+            ],
+            temperature=0.45,
+            max_completion_tokens=12000
+        )
 
-    raw = resp.choices[0].message.content.strip()
+        raw = resp.choices[0].message.content
 
-    # Remove markdown fences if the model still adds them
-    if "```" in raw:
-        parts = raw.split("```")
+        if not raw:
+            raise ValueError("AI returned an empty response")
 
-        for part in parts:
-            part = part.strip()
+        raw = raw.strip()
 
-            if part.startswith("json"):
-                part = part[4:].strip()
+        print("\n========== AI WEBSITE RESPONSE ==========")
+        print(raw[:5000])
+        print("=========================================\n")
 
-            if part.startswith("{"):
-                raw = part
-                break
+        # -----------------------------------
+        # Remove markdown code fences
+        # -----------------------------------
 
-    # Extract JSON object
-    start = raw.find("{")
-    end = raw.rfind("}") + 1
+        if raw.startswith("```"):
+            lines = raw.splitlines()
 
-    if start == -1 or end <= start:
-        raise ValueError("AI did not return valid JSON")
+            # Remove first line: ```html / ```
+            if lines:
+                lines = lines[1:]
 
-    raw = raw[start:end]
+            # Remove last line: ```
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
 
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError as e:
-        print("❌ Website JSON Error:", e)
-        print("❌ AI Response:", raw[:3000])
-        raise ValueError("AI returned invalid JSON")
+            raw = "\n".join(lines).strip()
+
+        # Sometimes AI may put text before HTML.
+        # Find <!DOCTYPE html>
+        # -----------------------------------
+
+        lower_raw = raw.lower()
+
+        start = lower_raw.find("<!doctype html>")
+
+        if start == -1:
+            start = lower_raw.find("<html")
+
+        # Find closing HTML tag
+        end = lower_raw.rfind("</html>")
+
+        # -----------------------------------
+        # Validate HTML
+        # -----------------------------------
+
+        if start == -1:
+            print("\n❌ No HTML document found.")
+            print(raw[:5000])
+
+            raise ValueError(
+                "AI did not return a valid HTML document"
+            )
+
+        if end == -1:
+            print("\n❌ Missing </html> tag.")
+            print(raw[:5000])
+
+            raise ValueError(
+                "AI returned incomplete HTML"
+            )
+
+        if end <= start:
+            raise ValueError(
+                "Invalid HTML structure returned by AI"
+            )
+
+        # Include </html>
+        html = raw[start:end + len("</html>")]
+
+        # -----------------------------------
+        # Extract title
+        # -----------------------------------
+
+        title = "AI Generated Website"
+
+        title_start = html.lower().find("<title>")
+        title_end = html.lower().find("</title>")
+
+        if title_start != -1 and title_end != -1:
+            title = html[
+                title_start + len("<title>"):
+                title_end
+            ].strip()
+
+        # -----------------------------------
+        # Create description
+        # -----------------------------------
+
+        description = (
+            f"AI-generated professional website for {prompt}"
+        )
+
+        # -----------------------------------
+        # Return data
+        # -----------------------------------
+
+        return {
+            "site_title": title,
+            "description": description,
+            "html": html
+        }
+
+    except Exception as e:
+
+        print("\n❌ Website generation error:")
+        print(str(e))
+
+        raise
 
 
 # ── Flask routes ──────────────────────────────────────────
